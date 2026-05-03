@@ -2,15 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { CheckCircle, Clock, AlertCircle, PenLine, Send, FileText } from 'lucide-react'
-import { Card } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
 import type { PostWithAccount } from '@/types/database'
 
 const STATUS_CONFIG = {
-  draft: { label: '下書き', variant: 'neutral' as const, Icon: PenLine },
-  scheduled: { label: '予約済み', variant: 'default' as const, Icon: Clock },
-  posted: { label: '投稿済み', variant: 'success' as const, Icon: CheckCircle },
-  failed: { label: 'エラー', variant: 'error' as const, Icon: AlertCircle },
+  draft:     { label: '下書き',   cls: 'bg-gray-100 text-gray-600',          Icon: PenLine },
+  scheduled: { label: '予約済み', cls: 'bg-[#E9F7F9] text-[#006F83]',        Icon: Clock },
+  posted:    { label: '投稿済み', cls: 'bg-green-50 text-green-700',           Icon: CheckCircle },
+  failed:    { label: 'エラー',   cls: 'bg-red-50 text-red-600',              Icon: AlertCircle },
 }
 
 export default function LogsPage() {
@@ -35,92 +33,89 @@ export default function LogsPage() {
   }
 
   return (
-    <div className="p-8">
-      {/* Header */}
+    <div className="p-6 lg:p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">投稿ログ</h1>
-        <p className="mt-1 text-sm text-gray-500">生成・投稿した全コンテンツの履歴</p>
+        <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>
+          投稿ログ
+        </h1>
+        <p className="mt-0.5 text-sm text-gray-500">生成・投稿した全コンテンツの履歴</p>
       </div>
 
-      <Card className="overflow-hidden p-0">
+      <div
+        className="overflow-hidden rounded-lg bg-white"
+        style={{
+          border: '1px solid #e5edf5',
+          boxShadow: 'rgba(50,50,93,0.08) 0px 8px 20px -8px, rgba(0,0,0,0.05) 0px 5px 10px -5px',
+        }}
+      >
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500" />
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-[#00A3BF]" />
           </div>
         ) : posts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-14 text-center">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
-              <FileText className="h-6 w-6 text-gray-400" />
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100">
+              <FileText className="h-5 w-5 text-gray-400" />
             </div>
             <p className="text-sm font-medium text-gray-500">投稿履歴がありません</p>
-            <p className="mt-1 text-xs text-gray-400">投稿を生成すると、ここに履歴が表示されます</p>
+            <p className="mt-0.5 text-xs text-gray-400">投稿を生成すると、ここに履歴が表示されます</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/80">
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  投稿内容
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  アカウント
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  ステータス
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  日時
-                </th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {posts.map(post => {
-                const { label, variant, Icon } = STATUS_CONFIG[post.status] ?? STATUS_CONFIG.draft
-                return (
-                  <tr key={post.id} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="max-w-xs px-5 py-4">
-                      <p className="line-clamp-2 text-sm text-gray-700 leading-relaxed">
-                        {post.text_content ?? '(テキストなし)'}
-                      </p>
-                      {post.image_url && (
-                        <span className="mt-0.5 block text-xs text-blue-500">画像あり</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-sm text-gray-500">{post.account?.name ?? '—'}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <Badge variant={variant}>
-                        <Icon className="h-3 w-3" />
-                        {label}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-xs text-gray-400">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">投稿内容</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">アカウント</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">ステータス</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">日時</th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {posts.map(post => {
+                  const { label, cls, Icon } = STATUS_CONFIG[post.status] ?? STATUS_CONFIG.draft
+                  return (
+                    <tr key={post.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                      <td className="max-w-xs px-5 py-3">
+                        <p className="line-clamp-2 text-gray-700 leading-relaxed">
+                          {post.text_content ?? '(テキストなし)'}
+                        </p>
+                        {post.image_url && (
+                          <span className="mt-0.5 block text-xs text-[#006F83]">画像あり</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-gray-500">{post.account?.name ?? '—'}</td>
+                      <td className="px-5 py-3">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>
+                          <Icon className="h-3 w-3" />
+                          {label}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-gray-400 tabular-nums">
                         {post.scheduled_at
                           ? new Date(post.scheduled_at).toLocaleString('ja-JP')
                           : new Date(post.created_at).toLocaleString('ja-JP')}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      {post.status === 'draft' && (
-                        <button
-                          onClick={() => handlePublish(post.id)}
-                          className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
-                        >
-                          <Send className="h-3 w-3" />
-                          投稿する
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-5 py-3">
+                        {post.status === 'draft' && (
+                          <button
+                            onClick={() => handlePublish(post.id)}
+                            className="flex items-center gap-1.5 text-xs font-medium text-[#006F83] hover:text-[#005A6B] transition-colors"
+                          >
+                            <Send className="h-3 w-3" />
+                            投稿する
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Card>
+      </div>
     </div>
   )
 }

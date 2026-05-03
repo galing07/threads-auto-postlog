@@ -1,4 +1,3 @@
-// Tremor Card [v1.0.0]
 import React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cx } from '@/lib/utils'
@@ -8,17 +7,17 @@ interface CardProps extends React.ComponentPropsWithoutRef<'div'> {
 }
 
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
-  ({ className, asChild, ...props }, ref) => {
+  ({ className, asChild, style, ...props }, ref) => {
     const Component = asChild ? Slot : 'div'
     return (
       <Component
         ref={ref}
-        className={cx(
-          'relative w-full rounded-lg border p-6 text-left shadow-xs',
-          'bg-white dark:bg-[#090E1A]',
-          'border-gray-200 dark:border-gray-900',
-          className,
-        )}
+        className={cx('relative w-full rounded-lg bg-white p-5 text-left', className)}
+        style={{
+          border: '1px solid #e5edf5',
+          boxShadow: 'rgba(50,50,93,0.08) 0px 8px 20px -8px, rgba(0,0,0,0.05) 0px 5px 10px -5px',
+          ...style,
+        }}
         {...props}
       />
     )

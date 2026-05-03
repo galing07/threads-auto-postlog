@@ -5,7 +5,6 @@ import { Plus, User, X } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Badge } from '@/components/ui/Badge'
 import { SelectNative } from '@/components/ui/Select'
 import { cx } from '@/lib/utils'
 import type { Account } from '@/types/database'
@@ -17,15 +16,15 @@ const PERSONAS = [
 ]
 
 const TONES = [
-  { value: 'friendly', label: 'フランク・親しみやすい' },
+  { value: 'friendly',     label: 'フランク・親しみやすい' },
   { value: 'professional', label: '専門的・プロ目線' },
-  { value: 'personal', label: '体験談・等身大' },
+  { value: 'personal',     label: '体験談・等身大' },
 ]
 
-function Label({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
+function FieldLabel({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
   return (
     <div className="mb-1.5 flex items-center justify-between">
-      <p className="text-xs font-medium uppercase tracking-wider text-gray-500">{children}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{children}</p>
       {optional && <span className="text-xs text-gray-400">任意</span>}
     </div>
   )
@@ -72,12 +71,14 @@ export default function AccountsPage() {
   }
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-6 lg:p-8 max-w-3xl">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">アカウント</h1>
-          <p className="mt-1 text-sm text-gray-500">Threadsアカウントとペルソナを管理します</p>
+          <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>
+            アカウント
+          </h1>
+          <p className="mt-0.5 text-sm text-gray-500">Threadsアカウントとペルソナを管理します</p>
         </div>
         <Button onClick={() => setShowForm(true)} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -88,29 +89,34 @@ export default function AccountsPage() {
       {/* Account list */}
       <div className="space-y-3">
         {accounts.length === 0 ? (
-          <Card className="text-center py-12">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
-              <User className="h-6 w-6 text-gray-400" />
+          <Card className="py-14 text-center">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100">
+              <User className="h-5 w-5 text-gray-400" />
             </div>
             <p className="text-sm font-medium text-gray-500">アカウントがありません</p>
-            <p className="mt-1 text-xs text-gray-400">「アカウント追加」から登録してください</p>
+            <p className="mt-0.5 text-xs text-gray-400">「アカウント追加」から登録してください</p>
           </Card>
         ) : (
           accounts.map(account => (
             <Card key={account.id} className="p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50">
-                    <User className="h-5 w-5 text-blue-600" />
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E9F7F9]">
+                    <User className="h-4 w-4 text-[#00A3BF]" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{account.name}</p>
                     <p className="text-xs text-gray-500">{account.persona}</p>
                   </div>
                 </div>
-                <Badge variant={account.is_active ? 'success' : 'neutral'}>
+                <span className={cx(
+                  'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  account.is_active
+                    ? 'bg-green-50 text-green-700'
+                    : 'bg-gray-100 text-gray-500',
+                )}>
                   {account.is_active ? 'アクティブ' : '停止中'}
-                </Badge>
+                </span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-x-6 border-t border-gray-100 pt-3">
                 <div>
@@ -130,11 +136,17 @@ export default function AccountsPage() {
       {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowForm(false)} />
-          <div className="relative w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-2xl">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowForm(false)} />
+          <div
+            className="relative w-full max-w-lg rounded-xl bg-white"
+            style={{
+              border: '1px solid #e5edf5',
+              boxShadow: 'rgba(50,50,93,0.12) 0px 20px 60px -20px, rgba(0,0,0,0.1) 0px 10px 20px -10px',
+            }}
+          >
             {/* Modal header */}
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <h2 className="text-base font-semibold text-gray-900">新しいアカウントを追加</h2>
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <h2 className="text-base font-semibold" style={{ color: '#061b31' }}>新しいアカウントを追加</h2>
               <button
                 onClick={() => setShowForm(false)}
                 className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -147,7 +159,7 @@ export default function AccountsPage() {
             <form onSubmit={handleSubmit} className="max-h-[calc(90vh-120px)] overflow-y-auto p-6">
               <div className="space-y-4">
                 <div>
-                  <Label>アカウント名</Label>
+                  <FieldLabel>アカウント名</FieldLabel>
                   <Input
                     required
                     value={form.name}
@@ -156,7 +168,7 @@ export default function AccountsPage() {
                   />
                 </div>
                 <div>
-                  <Label>ペルソナタイプ</Label>
+                  <FieldLabel>ペルソナタイプ</FieldLabel>
                   <SelectNative
                     value={form.persona}
                     onChange={e => setForm(f => ({ ...f, persona: e.target.value }))}
@@ -165,7 +177,7 @@ export default function AccountsPage() {
                   </SelectNative>
                 </div>
                 <div>
-                  <Label>文体トーン</Label>
+                  <FieldLabel>文体トーン</FieldLabel>
                   <SelectNative
                     value={form.tone}
                     onChange={e => setForm(f => ({ ...f, tone: e.target.value }))}
@@ -174,14 +186,14 @@ export default function AccountsPage() {
                   </SelectNative>
                 </div>
                 <div>
-                  <Label optional>発信テーマ（読点区切り）</Label>
+                  <FieldLabel optional>発信テーマ（読点区切り）</FieldLabel>
                   <Input
                     value={form.postTopics}
                     onChange={e => setForm(f => ({ ...f, postTopics: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <Label>Threads アクセストークン</Label>
+                  <FieldLabel>Threads アクセストークン</FieldLabel>
                   <Input
                     required
                     type="password"
@@ -191,7 +203,7 @@ export default function AccountsPage() {
                   />
                 </div>
                 <div>
-                  <Label>Threads ユーザーID</Label>
+                  <FieldLabel>Threads ユーザーID</FieldLabel>
                   <Input
                     required
                     value={form.threadsUserId}

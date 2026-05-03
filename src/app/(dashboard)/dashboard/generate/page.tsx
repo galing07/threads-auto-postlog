@@ -13,16 +13,18 @@ type Step = 'input' | 'preview' | 'done'
 type PostType = 'buzz' | 'empathy' | 'numbers' | 'story' | 'question'
 
 const POST_TYPES: { value: PostType; label: string; desc: string; emoji: string }[] = [
-  { value: 'buzz', label: 'バズ型', desc: '逆説・驚き', emoji: '⚡' },
-  { value: 'empathy', label: '共感型', desc: '心の声代弁', emoji: '🤝' },
-  { value: 'numbers', label: '数字型', desc: '具体数字', emoji: '📊' },
-  { value: 'story', label: 'ストーリー型', desc: '起承転結', emoji: '📖' },
-  { value: 'question', label: '問いかけ型', desc: 'コメント誘導', emoji: '💬' },
+  { value: 'buzz',     label: 'バズ型',      desc: '逆説・驚き',  emoji: '⚡' },
+  { value: 'empathy',  label: '共感型',      desc: '心の声代弁', emoji: '🤝' },
+  { value: 'numbers',  label: '数字型',      desc: '具体数字',   emoji: '📊' },
+  { value: 'story',    label: 'ストーリー型', desc: '起承転結',   emoji: '📖' },
+  { value: 'question', label: '問いかけ型',  desc: 'コメント誘導', emoji: '💬' },
 ]
 
-function Label({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">{children}</p>
+    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
+      {children}
+    </p>
   )
 }
 
@@ -128,10 +130,10 @@ export default function GeneratePage() {
 
   if (step === 'done') {
     return (
-      <div className="p-8 max-w-2xl">
-        <Card className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-            <CheckCircle className="h-6 w-6 text-emerald-600" />
+      <div className="p-6 lg:p-8 max-w-2xl">
+        <Card className="text-center py-12">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-50">
+            <CheckCircle className="h-6 w-6 text-green-600" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900">
             {savedPost?.status === 'posted' ? '投稿しました！' : '保存しました！'}
@@ -153,17 +155,19 @@ export default function GeneratePage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-6 lg:p-8 max-w-2xl">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">投稿生成</h1>
-          <p className="mt-1 text-sm text-gray-500">AIがテーマを Threads 投稿に変換します</p>
+          <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>
+            投稿生成
+          </h1>
+          <p className="mt-0.5 text-sm text-gray-500">AIがテーマを Threads 投稿に変換します</p>
         </div>
         {step === 'preview' && (
           <button
             onClick={() => setStep('input')}
-            className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors mt-1"
+            className="mt-1 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
             戻る
@@ -176,22 +180,18 @@ export default function GeneratePage() {
         <div className="space-y-5">
           <Card className="space-y-4">
             <div>
-              <Label>アカウント</Label>
+              <SectionLabel>アカウント</SectionLabel>
               <select
                 value={selectedAccount}
                 onChange={e => setSelectedAccount(e.target.value)}
-                className={cx(
-                  'w-full appearance-none rounded-md border px-3 py-2 text-sm outline-hidden transition',
-                  'border-gray-300 bg-white text-gray-900',
-                  'focus:border-blue-500 focus:ring-2 focus:ring-blue-200',
-                )}
+                className="w-full appearance-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
               >
                 {accounts.length === 0 && <option value="">アカウントを先に登録してください</option>}
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
             <div>
-              <Label>投稿テーマ</Label>
+              <SectionLabel>投稿テーマ</SectionLabel>
               <Input
                 value={theme}
                 onChange={e => setTheme(e.target.value)}
@@ -204,7 +204,7 @@ export default function GeneratePage() {
           {/* Post type picker */}
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <Label>投稿の型</Label>
+              <SectionLabel>投稿の型</SectionLabel>
               <span className="text-xs text-gray-400">任意</span>
             </div>
             <div className="grid grid-cols-5 gap-2">
@@ -214,14 +214,17 @@ export default function GeneratePage() {
                   type="button"
                   onClick={() => setPostType(postType === t.value ? '' : t.value)}
                   className={cx(
-                    'flex flex-col items-center gap-1 rounded-lg border py-3 px-2 text-center transition-all text-sm',
+                    'flex flex-col items-center gap-1 rounded-lg border py-3 px-2 text-center transition-all',
                     postType === t.value
-                      ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500/20'
-                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50',
+                      ? 'border-[#00A3BF] bg-[#E9F7F9]'
+                      : 'border-[#e5edf5] bg-white hover:border-[#c8d8e8] hover:bg-[#F8FAFC]',
                   )}
                 >
                   <span className="text-xl leading-none">{t.emoji}</span>
-                  <span className={cx('text-xs font-medium leading-tight', postType === t.value ? 'text-blue-700' : 'text-gray-700')}>
+                  <span className={cx(
+                    'text-xs font-medium leading-tight',
+                    postType === t.value ? 'text-[#006F83]' : 'text-gray-700',
+                  )}>
                     {t.label}
                   </span>
                   <span className="text-[10px] text-gray-400 leading-tight">{t.desc}</span>
@@ -249,11 +252,11 @@ export default function GeneratePage() {
           {/* Text */}
           <Card className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label>投稿文</Label>
+              <SectionLabel>投稿文</SectionLabel>
               <button
                 onClick={handleGenerate}
                 disabled={loading}
-                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] disabled:opacity-50"
               >
                 <RefreshCw className={cx('h-3 w-3', loading && 'animate-spin')} />
                 再生成
@@ -269,7 +272,7 @@ export default function GeneratePage() {
               <span className="text-xs text-gray-400">{generatedText.length} 文字</span>
               <div className={cx(
                 'h-1.5 w-1.5 rounded-full',
-                generatedText.length > 450 ? 'bg-red-400' : generatedText.length > 350 ? 'bg-yellow-400' : 'bg-emerald-400',
+                generatedText.length > 450 ? 'bg-red-400' : generatedText.length > 350 ? 'bg-yellow-400' : 'bg-green-500',
               )} />
             </div>
           </Card>
@@ -277,11 +280,11 @@ export default function GeneratePage() {
           {/* Image */}
           <Card className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label>図解画像</Label>
+              <SectionLabel>図解画像</SectionLabel>
               <button
                 onClick={handleGenerateImage}
                 disabled={imageLoading}
-                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] disabled:opacity-50"
               >
                 <ImageIcon className="h-3 w-3" />
                 {imageLoading ? '生成中...' : imageUrl ? '再生成' : '図解を生成'}
@@ -290,7 +293,7 @@ export default function GeneratePage() {
             {imageUrl ? (
               <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
             ) : (
-              <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-gray-200">
+              <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
                 <ImageIcon className="h-5 w-5 text-gray-300" />
                 <span className="text-xs text-gray-400">「図解を生成」で追加</span>
               </div>
@@ -299,16 +302,12 @@ export default function GeneratePage() {
 
           {/* Schedule */}
           <Card className="space-y-2">
-            <Label>予約投稿</Label>
+            <SectionLabel>予約投稿</SectionLabel>
             <input
               type="datetime-local"
               value={scheduledAt}
               onChange={e => setScheduledAt(e.target.value)}
-              className={cx(
-                'rounded-md border px-3 py-2 text-sm outline-hidden transition',
-                'border-gray-300 bg-white text-gray-900',
-                'focus:border-blue-500 focus:ring-2 focus:ring-blue-200',
-              )}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
             />
             {!scheduledAt && <p className="text-xs text-gray-400">空白の場合は下書き保存になります</p>}
           </Card>

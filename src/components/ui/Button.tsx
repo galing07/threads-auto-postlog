@@ -1,4 +1,3 @@
-// Tremor Button [v1.0.0]
 import React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { RiLoader2Fill } from '@remixicon/react'
@@ -14,36 +13,30 @@ const buttonVariants = tv({
   variants: {
     variant: {
       primary: [
-        'border-transparent',
-        'text-white dark:text-white',
-        'bg-blue-500 dark:bg-blue-500',
-        'hover:bg-blue-600 dark:hover:bg-blue-600',
-        'disabled:bg-blue-300 disabled:text-white',
+        'border-transparent text-white',
+        'bg-[#00A3BF] hover:bg-[#008CA8]',
+        'disabled:bg-[#99F2FF] disabled:text-white',
       ],
       secondary: [
-        'border-gray-300 dark:border-gray-800',
-        'text-gray-900 dark:text-gray-50',
-        'bg-white dark:bg-gray-950',
-        'hover:bg-gray-50 dark:hover:bg-gray-900/60',
+        'border-[#e5edf5] text-slate-700 bg-white',
+        'hover:bg-[#F8FAFC] hover:border-[#c8d8e8]',
         'disabled:text-gray-400',
       ],
       light: [
         'shadow-none border-transparent',
-        'text-gray-900 dark:text-gray-50',
-        'bg-gray-200 dark:bg-gray-900',
-        'hover:bg-gray-300/70 dark:hover:bg-gray-800/80',
+        'text-slate-700 bg-[#E9F7F9]',
+        'hover:bg-[#D5F0F4]',
         'disabled:bg-gray-100 disabled:text-gray-400',
       ],
       ghost: [
         'shadow-none border-transparent',
-        'text-gray-900 dark:text-gray-50',
-        'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800/80',
+        'text-slate-700 bg-transparent',
+        'hover:bg-[#F8FAFC]',
         'disabled:text-gray-400',
       ],
       destructive: [
         'text-white border-transparent',
-        'bg-red-600 dark:bg-red-700',
-        'hover:bg-red-700 dark:hover:bg-red-600',
+        'bg-red-600 hover:bg-red-700',
         'disabled:bg-red-300 disabled:text-white',
       ],
     },
