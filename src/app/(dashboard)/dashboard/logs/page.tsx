@@ -1,14 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CheckCircle, Clock, AlertCircle, PenLine, Send } from 'lucide-react'
+import { CheckCircle, Clock, AlertCircle, PenLine, Send, FileText } from 'lucide-react'
+import { Card } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
 import type { PostWithAccount } from '@/types/database'
 
-const statusConfig = {
-  draft: { label: '下書き', color: 'text-gray-600 bg-gray-100', icon: PenLine },
-  scheduled: { label: '予約済み', color: 'text-blue-600 bg-blue-50', icon: Clock },
-  posted: { label: '投稿済み', color: 'text-green-600 bg-green-50', icon: CheckCircle },
-  failed: { label: 'エラー', color: 'text-red-600 bg-red-50', icon: AlertCircle },
+const STATUS_CONFIG = {
+  draft: { label: '下書き', variant: 'neutral' as const, Icon: PenLine },
+  scheduled: { label: '予約済み', variant: 'default' as const, Icon: Clock },
+  posted: { label: '投稿済み', variant: 'success' as const, Icon: CheckCircle },
+  failed: { label: 'エラー', variant: 'error' as const, Icon: AlertCircle },
 }
 
 export default function LogsPage() {
@@ -26,7 +28,7 @@ export default function LogsPage() {
     if (!confirm('今すぐThreadsに投稿しますか？')) return
     const res = await fetch(`/api/posts/${postId}/publish`, { method: 'POST' })
     if (res.ok) {
-      setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: 'posted' } : p))
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: 'posted' as const } : p))
     } else {
       alert('投稿に失敗しました')
     }
@@ -34,57 +36,80 @@ export default function LogsPage() {
 
   return (
     <div className="p-8">
+      {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">投稿ログ</h2>
-        <p className="text-gray-500 mt-1">生成・投稿した全コンテンツの履歴</p>
+        <h1 className="text-2xl font-semibold text-gray-900">投稿ログ</h1>
+        <p className="mt-1 text-sm text-gray-500">生成・投稿した全コンテンツの履歴</p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <Card className="overflow-hidden p-0">
         {loading ? (
-          <div className="p-8 text-center text-gray-400 text-sm">読み込み中...</div>
+          <div className="flex items-center justify-center py-16">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500" />
+          </div>
         ) : posts.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">投稿履歴がありません</div>
+          <div className="flex flex-col items-center justify-center py-14 text-center">
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
+              <FileText className="h-6 w-6 text-gray-400" />
+            </div>
+            <p className="text-sm font-medium text-gray-500">投稿履歴がありません</p>
+            <p className="mt-1 text-xs text-gray-400">投稿を生成すると、ここに履歴が表示されます</p>
+          </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">投稿内容</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">アカウント</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">ステータス</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">日時</th>
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/80">
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  投稿内容
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  アカウント
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  ステータス
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  日時
+                </th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {posts.map(post => {
-                const { label, color, icon: Icon } = statusConfig[post.status]
+                const { label, variant, Icon } = STATUS_CONFIG[post.status] ?? STATUS_CONFIG.draft
                 return (
-                  <tr key={post.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-4 max-w-xs">
-                      <p className="line-clamp-2 text-gray-700">{post.text_content ?? '(テキストなし)'}</p>
+                  <tr key={post.id} className="hover:bg-gray-50/60 transition-colors">
+                    <td className="max-w-xs px-5 py-4">
+                      <p className="line-clamp-2 text-sm text-gray-700 leading-relaxed">
+                        {post.text_content ?? '(テキストなし)'}
+                      </p>
                       {post.image_url && (
-                        <span className="text-xs text-blue-500 mt-0.5 block">画像あり</span>
+                        <span className="mt-0.5 block text-xs text-blue-500">画像あり</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-gray-500">{post.account?.name ?? '-'}</td>
                     <td className="px-5 py-4">
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${color}`}>
-                        <Icon size={12} />
-                        {label}
-                      </span>
+                      <span className="text-sm text-gray-500">{post.account?.name ?? '—'}</span>
                     </td>
-                    <td className="px-5 py-4 text-gray-400 text-xs">
-                      {post.scheduled_at
-                        ? new Date(post.scheduled_at).toLocaleString('ja-JP')
-                        : new Date(post.created_at).toLocaleString('ja-JP')}
+                    <td className="px-5 py-4">
+                      <Badge variant={variant}>
+                        <Icon className="h-3 w-3" />
+                        {label}
+                      </Badge>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="text-xs text-gray-400">
+                        {post.scheduled_at
+                          ? new Date(post.scheduled_at).toLocaleString('ja-JP')
+                          : new Date(post.created_at).toLocaleString('ja-JP')}
+                      </span>
                     </td>
                     <td className="px-5 py-4">
                       {post.status === 'draft' && (
                         <button
                           onClick={() => handlePublish(post.id)}
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                          className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
                         >
-                          <Send size={12} />
+                          <Send className="h-3 w-3" />
                           投稿する
                         </button>
                       )}
@@ -95,7 +120,7 @@ export default function LogsPage() {
             </tbody>
           </table>
         )}
-      </div>
+      </Card>
     </div>
   )
 }
