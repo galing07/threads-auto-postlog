@@ -3,16 +3,6 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  AppShell,
-  NavLink,
-  Stack,
-  Text,
-  Group,
-  ThemeIcon,
-  UnstyledButton,
-  Box,
-} from '@mantine/core'
-import {
   PenLine,
   CalendarClock,
   Users,
@@ -21,6 +11,7 @@ import {
   LogOut,
   Zap,
 } from 'lucide-react'
+import { cx } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
 
 const navItems = [
@@ -43,100 +34,61 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <AppShell
-      navbar={{ width: 220, breakpoint: 'sm' }}
-      style={{ '--app-shell-border-color': 'transparent' } as React.CSSProperties}
-    >
-      <AppShell.Navbar
-        style={{
-          background: '#0D0D16',
-          borderRight: 'none',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-        p="md"
-      >
-        {/* ロゴ */}
-        <Group gap={10} mb="xl" px={4}>
-          <ThemeIcon
-            size={36}
-            radius="md"
-            variant="gradient"
-            gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-          >
-            <Zap size={16} strokeWidth={2.5} />
-          </ThemeIcon>
-          <Box>
-            <Text fw={700} size="sm" c="white" lh={1.2}>AutoPost</Text>
-            <Text size="xs" c="dark.3" lh={1}>Threads</Text>
-          </Box>
-        </Group>
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      {/* Sidebar */}
+      <nav className="flex w-56 flex-col bg-gray-950 shrink-0">
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-4 py-5 border-b border-white/5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500 shrink-0">
+            <Zap className="h-4 w-4 text-white" strokeWidth={2.5} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white leading-tight">AutoPost</p>
+            <p className="text-[11px] text-gray-500 leading-tight">Threads</p>
+          </div>
+        </div>
 
-        {/* ナビゲーション */}
-        <Stack gap={4} flex={1}>
+        {/* Nav links */}
+        <div className="flex flex-1 flex-col gap-0.5 px-2 py-3 overflow-y-auto">
           {navItems.map(({ href, label, icon: Icon }) => {
-            const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+            const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
             return (
-              <NavLink
+              <Link
                 key={href}
-                component={Link}
                 href={href}
-                label={label}
-                leftSection={
-                  <Icon
-                    size={16}
-                    color={isActive ? 'var(--mantine-color-violet-4)' : 'rgba(255,255,255,0.35)'}
-                  />
-                }
-                active={isActive}
-                styles={{
-                  root: {
-                    borderRadius: 8,
-                    color: isActive ? 'white' : 'rgba(255,255,255,0.4)',
-                    fontWeight: isActive ? 600 : 400,
-                    fontSize: 14,
-                    '&[dataActive]': {
-                      backgroundColor: 'rgba(255,255,255,0.08)',
-                      color: 'white',
-                    },
-                    '&:hover': {
-                      backgroundColor: 'rgba(255,255,255,0.05)',
-                      color: 'rgba(255,255,255,0.7)',
-                    },
-                  },
-                }}
-              />
+                className={cx(
+                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+                  active
+                    ? 'bg-white/10 text-white font-medium'
+                    : 'text-gray-400 hover:bg-white/5 hover:text-gray-200',
+                )}
+              >
+                <Icon
+                  className={cx('h-4 w-4 shrink-0', active ? 'text-blue-400' : 'text-gray-500')}
+                />
+                {label}
+              </Link>
             )
           })}
-        </Stack>
+        </div>
 
-        {/* フッター */}
-        <Stack gap={4} mt="md">
-          <UnstyledButton
+        {/* Footer */}
+        <div className="border-t border-white/5 px-2 py-3">
+          <button
             onClick={handleLogout}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '8px 12px',
-              borderRadius: 8,
-              color: 'rgba(255,255,255,0.25)',
-              fontSize: 14,
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.55)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.25)')}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300"
           >
-            <LogOut size={15} />
+            <LogOut className="h-4 w-4 shrink-0" />
             ログアウト
-          </UnstyledButton>
-          <Text size="xs" c="dark.6" px={12}>v1.0.0</Text>
-        </Stack>
-      </AppShell.Navbar>
+          </button>
+          <p className="mt-1 px-3 text-[11px] text-gray-600">v1.0.0</p>
+        </div>
+      </nav>
 
-      <AppShell.Main style={{ background: '#F5F5FA', minHeight: '100vh' }}>
+      {/* Main */}
+      <main className="flex-1 overflow-auto">
         {children}
-      </AppShell.Main>
-    </AppShell>
+      </main>
+    </div>
   )
 }

@@ -2,22 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Box,
-  Button,
-  Card,
-  Center,
-  Group,
-  PasswordInput,
-  Stack,
-  Text,
-  TextInput,
-  ThemeIcon,
-  Title,
-  Alert,
-} from '@mantine/core'
-import { Zap, AlertCircle } from 'lucide-react'
+import { Zap } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { cx } from '@/lib/utils'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -45,129 +34,75 @@ export default function LoginPage() {
   }
 
   return (
-    <Box
-      style={{
-        minHeight: '100vh',
-        background: '#0D0D16',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* 背景グロー */}
-      <Box
-        style={{
-          position: 'absolute',
-          top: '25%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 400,
-          height: 400,
-          background: 'radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)',
-          pointerEvents: 'none',
-        }}
-      />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-950 px-4">
+      {/* Logo */}
+      <div className="mb-8 flex flex-col items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500">
+          <Zap className="h-6 w-6 text-white" strokeWidth={2.5} />
+        </div>
+        <div className="text-center">
+          <h1 className="text-xl font-bold text-white">AutoPost</h1>
+          <p className="text-sm text-gray-500">Threads 自動投稿</p>
+        </div>
+      </div>
 
-      <Box w="100%" maw={360} style={{ position: 'relative' }}>
-        {/* ロゴ */}
-        <Center mb="xl">
-          <Stack align="center" gap={8}>
-            <ThemeIcon
-              size={56}
-              radius={16}
-              variant="gradient"
-              gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-              style={{ boxShadow: '0 8px 32px rgba(124,58,237,0.35)' }}
-            >
-              <Zap size={24} strokeWidth={2.5} />
-            </ThemeIcon>
-            <Title order={2} c="white" fw={700} size="xl">AutoPost</Title>
-            <Text size="sm" c="dark.3">Threads 自動投稿</Text>
-          </Stack>
-        </Center>
+      {/* Card */}
+      <div className="w-full max-w-sm rounded-xl border border-white/10 bg-white/[0.03] p-8 shadow-2xl">
+        <h2 className="mb-6 text-base font-semibold text-white">ログイン</h2>
 
-        {/* フォームカード */}
-        <Card
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            backdropFilter: 'blur(12px)',
-          }}
-          radius="lg"
-          p="xl"
-        >
-          <Text fw={600} c="white" mb="lg">ログイン</Text>
-
-          <form onSubmit={handleSubmit}>
-            <Stack gap="md">
-              <TextInput
-                label="メールアドレス"
-                placeholder="admin@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                type="email"
-                styles={{
-                  label: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 },
-                  input: {
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'white',
-                    '&::placeholder': { color: 'rgba(255,255,255,0.2)' },
-                    '&:focus': { borderColor: 'var(--mantine-color-violet-5)' },
-                  },
-                }}
-              />
-
-              <PasswordInput
-                label="パスワード"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                styles={{
-                  label: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 },
-                  input: {
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'white',
-                    '&:focus': { borderColor: 'var(--mantine-color-violet-5)' },
-                  },
-                  innerInput: { color: 'white' },
-                }}
-              />
-
-              {error && (
-                <Alert
-                  icon={<AlertCircle size={16} />}
-                  color="red"
-                  variant="light"
-                  radius="md"
-                >
-                  {error}
-                </Alert>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-gray-400">
+              メールアドレス
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              placeholder="admin@example.com"
+              className={cx(
+                'w-full rounded-md border px-3 py-2 text-sm outline-hidden transition',
+                'border-white/10 bg-white/5 text-white placeholder-gray-600',
+                'focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20',
               )}
+            />
+          </div>
 
-              <Button
-                type="submit"
-                loading={loading}
-                fullWidth
-                mt={4}
-                variant="gradient"
-                gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-                size="md"
-                radius="md"
-                style={{ boxShadow: '0 4px 16px rgba(124,58,237,0.3)' }}
-              >
-                ログイン
-              </Button>
-            </Stack>
-          </form>
-        </Card>
-      </Box>
-    </Box>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-gray-400">
+              パスワード
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              placeholder="••••••••"
+              className={cx(
+                'w-full rounded-md border px-3 py-2 text-sm outline-hidden transition',
+                'border-white/10 bg-white/5 text-white placeholder-gray-600',
+                'focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20',
+              )}
+            />
+          </div>
+
+          {error && (
+            <p className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400 ring-1 ring-red-500/20">
+              {error}
+            </p>
+          )}
+
+          <Button
+            type="submit"
+            isLoading={loading}
+            loadingText="ログイン中..."
+            className="mt-2 w-full rounded-md py-2.5 text-sm"
+          >
+            ログイン
+          </Button>
+        </form>
+      </div>
+    </div>
   )
 }

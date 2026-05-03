@@ -1,22 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import {
-  Badge,
-  Box,
-  Button,
-  Card,
-  Group,
-  Modal,
-  PasswordInput,
-  Select,
-  Stack,
-  Text,
-  TextInput,
-  ThemeIcon,
-  Title,
-} from '@mantine/core'
-import { Plus, User } from 'lucide-react'
+import { Plus, User, X } from 'lucide-react'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Badge } from '@/components/ui/Badge'
+import { SelectNative } from '@/components/ui/Select'
+import { cx } from '@/lib/utils'
 import type { Account } from '@/types/database'
 
 const PERSONAS = [
@@ -31,12 +22,13 @@ const TONES = [
   { value: 'personal', label: '体験談・等身大' },
 ]
 
-const labelStyle = {
-  fontWeight: 700 as const,
-  fontSize: 11,
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.04em',
-  color: 'var(--mantine-color-gray-6)',
+function Label({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
+  return (
+    <div className="mb-1.5 flex items-center justify-between">
+      <p className="text-xs font-medium uppercase tracking-wider text-gray-500">{children}</p>
+      {optional && <span className="text-xs text-gray-400">任意</span>}
+    </div>
+  )
 }
 
 export default function AccountsPage() {
@@ -54,9 +46,7 @@ export default function AccountsPage() {
   })
 
   useEffect(() => {
-    fetch('/api/accounts')
-      .then(r => r.json())
-      .then(setAccounts)
+    fetch('/api/accounts').then(r => r.json()).then(setAccounts)
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -82,159 +72,157 @@ export default function AccountsPage() {
   }
 
   return (
-    <Box p="xl" maw={720}>
-      {/* ヘッダー */}
-      <Group justify="space-between" align="flex-start" mb="xl">
-        <Stack gap={4}>
-          <Title order={2} fw={700} size="h2">アカウント</Title>
-          <Text size="sm" c="dimmed">Threadsアカウントとペルソナを管理します</Text>
-        </Stack>
-        <Button
-          leftSection={<Plus size={15} />}
-          variant="gradient"
-          gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-          radius="md"
-          onClick={() => setShowForm(true)}
-          style={{ boxShadow: '0 4px 16px rgba(124,58,237,0.2)' }}
-        >
+    <div className="p-8 max-w-3xl">
+      {/* Header */}
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">アカウント</h1>
+          <p className="mt-1 text-sm text-gray-500">Threadsアカウントとペルソナを管理します</p>
+        </div>
+        <Button onClick={() => setShowForm(true)} className="gap-2">
+          <Plus className="h-4 w-4" />
           アカウント追加
         </Button>
-      </Group>
+      </div>
 
-      {/* アカウント一覧 */}
-      <Stack gap="md">
+      {/* Account list */}
+      <div className="space-y-3">
         {accounts.length === 0 ? (
-          <Card withBorder radius="lg" shadow="sm" p={48} ta="center">
-            <ThemeIcon size={48} radius="md" color="gray" variant="light" mx="auto" mb="md">
-              <User size={20} />
-            </ThemeIcon>
-            <Text size="sm" fw={500} c="dimmed">アカウントがありません</Text>
-            <Text size="xs" c="dimmed" mt={4}>「アカウント追加」から登録してください</Text>
+          <Card className="text-center py-12">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
+              <User className="h-6 w-6 text-gray-400" />
+            </div>
+            <p className="text-sm font-medium text-gray-500">アカウントがありません</p>
+            <p className="mt-1 text-xs text-gray-400">「アカウント追加」から登録してください</p>
           </Card>
         ) : (
           accounts.map(account => (
-            <Card key={account.id} withBorder radius="lg" shadow="sm" p="lg">
-              <Group justify="space-between" mb="md">
-                <Group gap="md">
-                  <ThemeIcon
-                    size={44}
-                    radius="md"
-                    variant="gradient"
-                    gradient={{ from: 'violet.1', to: 'indigo.1', deg: 135 }}
-                  >
-                    <User size={19} color="var(--mantine-color-violet-7)" />
-                  </ThemeIcon>
-                  <Box>
-                    <Text fw={600} size="sm">{account.name}</Text>
-                    <Text size="xs" c="dimmed">{account.persona}</Text>
-                  </Box>
-                </Group>
-                <Badge
-                  color={account.is_active ? 'teal' : 'gray'}
-                  variant="light"
-                  radius="xl"
-                  size="sm"
-                >
+            <Card key={account.id} className="p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50">
+                    <User className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{account.name}</p>
+                    <p className="text-xs text-gray-500">{account.persona}</p>
+                  </div>
+                </div>
+                <Badge variant={account.is_active ? 'success' : 'neutral'}>
                   {account.is_active ? 'アクティブ' : '停止中'}
                 </Badge>
-              </Group>
-
-              <Group
-                gap="xl"
-                pt="md"
-                style={{ borderTop: '1px solid var(--mantine-color-gray-1)' }}
-              >
-                <Box>
-                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.04em' }} mb={2}>対象</Text>
-                  <Text size="xs">{account.target_audience}</Text>
-                </Box>
-                <Box>
-                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.04em' }} mb={2}>文体</Text>
-                  <Text size="xs">{TONES.find(t => t.value === account.tone)?.label}</Text>
-                </Box>
-              </Group>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-x-6 border-t border-gray-100 pt-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">対象</p>
+                  <p className="mt-0.5 text-xs text-gray-600">{account.target_audience}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">文体</p>
+                  <p className="mt-0.5 text-xs text-gray-600">{TONES.find(t => t.value === account.tone)?.label}</p>
+                </div>
+              </div>
             </Card>
           ))
         )}
-      </Stack>
+      </div>
 
-      {/* モーダル */}
-      <Modal
-        opened={showForm}
-        onClose={() => setShowForm(false)}
-        title={<Text fw={700}>新しいアカウントを追加</Text>}
-        radius="lg"
-        size="lg"
-        overlayProps={{ blur: 4 }}
-      >
-        <form onSubmit={handleSubmit}>
-          <Stack gap="md">
-            <TextInput
-              label="アカウント名"
-              placeholder="例：転職ナビ公式"
-              required
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              styles={{ label: labelStyle }}
-            />
-            <Select
-              label="ペルソナタイプ"
-              data={PERSONAS.map(p => ({ value: p.value, label: p.label }))}
-              value={form.persona}
-              onChange={v => setForm(f => ({ ...f, persona: v ?? f.persona }))}
-              styles={{ label: labelStyle }}
-            />
-            <Select
-              label="文体トーン"
-              data={TONES.map(t => ({ value: t.value, label: t.label }))}
-              value={form.tone}
-              onChange={v => setForm(f => ({ ...f, tone: v ?? f.tone }))}
-              styles={{ label: labelStyle }}
-            />
-            <TextInput
-              label="発信テーマ（読点区切り）"
-              value={form.postTopics}
-              onChange={e => setForm(f => ({ ...f, postTopics: e.target.value }))}
-              styles={{ label: labelStyle }}
-            />
-            <PasswordInput
-              label="Threads アクセストークン"
-              placeholder="Meta Developer Console から取得"
-              required
-              value={form.accessToken}
-              onChange={e => setForm(f => ({ ...f, accessToken: e.target.value }))}
-              styles={{ label: labelStyle }}
-            />
-            <TextInput
-              label="Threads ユーザーID"
-              placeholder="例：12345678"
-              required
-              value={form.threadsUserId}
-              onChange={e => setForm(f => ({ ...f, threadsUserId: e.target.value }))}
-              styles={{ label: labelStyle }}
-            />
-
-            <Group grow mt="sm">
-              <Button
-                variant="default"
-                radius="md"
+      {/* Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowForm(false)} />
+          <div className="relative w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-2xl">
+            {/* Modal header */}
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-base font-semibold text-gray-900">新しいアカウントを追加</h2>
+              <button
                 onClick={() => setShowForm(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
               >
-                キャンセル
-              </Button>
-              <Button
-                type="submit"
-                loading={loading}
-                variant="gradient"
-                gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-                radius="md"
-              >
-                保存
-              </Button>
-            </Group>
-          </Stack>
-        </form>
-      </Modal>
-    </Box>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <form onSubmit={handleSubmit} className="max-h-[calc(90vh-120px)] overflow-y-auto p-6">
+              <div className="space-y-4">
+                <div>
+                  <Label>アカウント名</Label>
+                  <Input
+                    required
+                    value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="例：転職ナビ公式"
+                  />
+                </div>
+                <div>
+                  <Label>ペルソナタイプ</Label>
+                  <SelectNative
+                    value={form.persona}
+                    onChange={e => setForm(f => ({ ...f, persona: e.target.value }))}
+                  >
+                    {PERSONAS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </SelectNative>
+                </div>
+                <div>
+                  <Label>文体トーン</Label>
+                  <SelectNative
+                    value={form.tone}
+                    onChange={e => setForm(f => ({ ...f, tone: e.target.value }))}
+                  >
+                    {TONES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </SelectNative>
+                </div>
+                <div>
+                  <Label optional>発信テーマ（読点区切り）</Label>
+                  <Input
+                    value={form.postTopics}
+                    onChange={e => setForm(f => ({ ...f, postTopics: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label>Threads アクセストークン</Label>
+                  <Input
+                    required
+                    type="password"
+                    value={form.accessToken}
+                    onChange={e => setForm(f => ({ ...f, accessToken: e.target.value }))}
+                    placeholder="Meta Developer Console から取得"
+                  />
+                </div>
+                <div>
+                  <Label>Threads ユーザーID</Label>
+                  <Input
+                    required
+                    value={form.threadsUserId}
+                    onChange={e => setForm(f => ({ ...f, threadsUserId: e.target.value }))}
+                    placeholder="例：12345678"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowForm(false)}
+                    className="flex-1"
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    type="submit"
+                    isLoading={loading}
+                    loadingText="保存中..."
+                    className="flex-1"
+                  >
+                    保存
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

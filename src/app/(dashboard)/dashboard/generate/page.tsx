@@ -1,24 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import {
-  Box,
-  Button,
-  Card,
-  Group,
-  Image,
-  Loader,
-  Select,
-  Stack,
-  Text,
-  Textarea,
-  TextInput,
-  Title,
-  UnstyledButton,
-  ThemeIcon,
-  Badge,
-} from '@mantine/core'
 import { Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft, CheckCircle } from 'lucide-react'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Textarea } from '@/components/ui/Textarea'
+import { cx } from '@/lib/utils'
 import type { Account, Post } from '@/types/database'
 
 type Step = 'input' | 'preview' | 'done'
@@ -32,11 +20,17 @@ const POST_TYPES: { value: PostType; label: string; desc: string; emoji: string 
   { value: 'question', label: '問いかけ型', desc: 'コメント誘導', emoji: '💬' },
 ]
 
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">{children}</p>
+  )
+}
+
 export default function GeneratePage() {
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
+  const [selectedAccount, setSelectedAccount] = useState('')
   const [theme, setTheme] = useState('')
-  const [postType, setPostType] = useState<PostType | null>(null)
+  const [postType, setPostType] = useState<PostType | ''>('')
   const [step, setStep] = useState<Step>('input')
   const [loading, setLoading] = useState(false)
   const [generatedText, setGeneratedText] = useState('')
@@ -124,7 +118,7 @@ export default function GeneratePage() {
   function handleReset() {
     setStep('input')
     setTheme('')
-    setPostType(null)
+    setPostType('')
     setGeneratedText('')
     setGeneratedSummary('')
     setImageUrl('')
@@ -134,314 +128,215 @@ export default function GeneratePage() {
 
   if (step === 'done') {
     return (
-      <Box p="xl" maw={640}>
-        <Card withBorder radius="lg" shadow="sm" p="xl" ta="center">
-          <ThemeIcon size={56} radius="md" color="teal" variant="light" mx="auto" mb="md">
-            <CheckCircle size={24} />
-          </ThemeIcon>
-          <Title order={3} fw={700}>
+      <div className="p-8 max-w-2xl">
+        <Card className="text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+            <CheckCircle className="h-6 w-6 text-emerald-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900">
             {savedPost?.status === 'posted' ? '投稿しました！' : '保存しました！'}
-          </Title>
-          <Text size="sm" c="dimmed" mt={6}>
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
             {savedPost?.status === 'scheduled'
               ? `${scheduledAt} に予約投稿します`
               : savedPost?.status === 'posted'
               ? 'Threadsに投稿されました'
               : '下書きとして保存されました'}
-          </Text>
-          <Button
-            mt="xl"
-            variant="gradient"
-            gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-            leftSection={<Sparkles size={15} />}
-            onClick={handleReset}
-            radius="md"
-          >
+          </p>
+          <Button onClick={handleReset} className="mt-6 gap-2">
+            <Sparkles className="h-4 w-4" />
             新しい投稿を生成する
           </Button>
         </Card>
-      </Box>
+      </div>
     )
   }
 
   return (
-    <Box p="xl" maw={640}>
-      {/* ヘッダー */}
-      <Group justify="space-between" align="flex-start" mb="xl">
-        <Stack gap={4}>
-          <Title order={2} fw={700} size="h2">投稿生成</Title>
-          <Text size="sm" c="dimmed">AIがあなたのテーマを Threads 投稿に変換します</Text>
-        </Stack>
+    <div className="p-8 max-w-2xl">
+      {/* Header */}
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">投稿生成</h1>
+          <p className="mt-1 text-sm text-gray-500">AIがテーマを Threads 投稿に変換します</p>
+        </div>
         {step === 'preview' && (
-          <UnstyledButton
+          <button
             onClick={() => setStep('input')}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--mantine-color-dimmed)', fontSize: 14 }}
+            className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors mt-1"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft className="h-4 w-4" />
             戻る
-          </UnstyledButton>
+          </button>
         )}
-      </Group>
+      </div>
 
-      {/* ステップインジケーター */}
-      <Group gap="xs" mb="xl">
-        {(['input', 'preview'] as const).map((s, i) => (
-          <Group key={s} gap="xs">
-            <Box
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 700,
-                background: step === s
-                  ? 'linear-gradient(135deg, var(--mantine-color-violet-6), var(--mantine-color-indigo-6))'
-                  : i < ['input', 'preview'].indexOf(step)
-                  ? 'var(--mantine-color-teal-6)'
-                  : 'var(--mantine-color-gray-2)',
-                color: step === s || i < ['input', 'preview'].indexOf(step) ? 'white' : 'var(--mantine-color-gray-5)',
-              }}
-            >
-              {i < ['input', 'preview'].indexOf(step) ? '✓' : i + 1}
-            </Box>
-            <Text size="xs" fw={step === s ? 600 : 400} c={step === s ? 'dark' : 'dimmed'}>
-              {s === 'input' ? '入力' : 'プレビュー'}
-            </Text>
-            {i < 1 && <Box style={{ width: 32, height: 1, background: i < ['input', 'preview'].indexOf(step) ? 'var(--mantine-color-teal-4)' : 'var(--mantine-color-gray-3)' }} />}
-          </Group>
-        ))}
-      </Group>
-
-      {/* Step 1: 入力 */}
+      {/* Step 1 */}
       {step === 'input' && (
-        <Stack gap="lg">
-          <Card withBorder radius="lg" shadow="sm" p="lg">
-            <Stack gap="md">
-              <Select
-                label="アカウント"
-                data={accounts.map(a => ({ value: a.id, label: a.name }))}
+        <div className="space-y-5">
+          <Card className="space-y-4">
+            <div>
+              <Label>アカウント</Label>
+              <select
                 value={selectedAccount}
-                onChange={setSelectedAccount}
-                placeholder="アカウントを先に登録してください"
-                styles={{ label: { fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--mantine-color-gray-6)' } }}
-              />
-              <TextInput
-                label="投稿テーマ"
-                placeholder="例：高卒でも転職できる3つの理由"
+                onChange={e => setSelectedAccount(e.target.value)}
+                className={cx(
+                  'w-full appearance-none rounded-md border px-3 py-2 text-sm outline-hidden transition',
+                  'border-gray-300 bg-white text-gray-900',
+                  'focus:border-blue-500 focus:ring-2 focus:ring-blue-200',
+                )}
+              >
+                {accounts.length === 0 && <option value="">アカウントを先に登録してください</option>}
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>投稿テーマ</Label>
+              <Input
                 value={theme}
                 onChange={e => setTheme(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleGenerate()}
-                styles={{ label: { fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--mantine-color-gray-6)' } }}
+                placeholder="例：高卒でも転職できる3つの理由"
               />
-            </Stack>
+            </div>
           </Card>
 
-          {/* 投稿の型 */}
-          <Box>
-            <Group justify="space-between" mb="sm">
-              <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.04em' }}>投稿の型</Text>
-              <Text size="xs" c="dimmed">任意</Text>
-            </Group>
-            <Group gap="xs">
+          {/* Post type picker */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <Label>投稿の型</Label>
+              <span className="text-xs text-gray-400">任意</span>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
               {POST_TYPES.map(t => (
-                <UnstyledButton
+                <button
                   key={t.value}
-                  onClick={() => setPostType(postType === t.value ? null : t.value)}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '12px 8px',
-                    borderRadius: 10,
-                    border: postType === t.value
-                      ? '1.5px solid var(--mantine-color-violet-5)'
-                      : '1.5px solid var(--mantine-color-gray-2)',
-                    background: postType === t.value
-                      ? 'var(--mantine-color-violet-0)'
-                      : 'white',
-                    transition: 'all 0.15s',
-                  }}
+                  type="button"
+                  onClick={() => setPostType(postType === t.value ? '' : t.value)}
+                  className={cx(
+                    'flex flex-col items-center gap-1 rounded-lg border py-3 px-2 text-center transition-all text-sm',
+                    postType === t.value
+                      ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500/20'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50',
+                  )}
                 >
-                  <Text size="xl" lh={1}>{t.emoji}</Text>
-                  <Text
-                    size="xs"
-                    fw={600}
-                    c={postType === t.value ? 'violet' : 'dark'}
-                    ta="center"
-                    lh={1.2}
-                  >
+                  <span className="text-xl leading-none">{t.emoji}</span>
+                  <span className={cx('text-xs font-medium leading-tight', postType === t.value ? 'text-blue-700' : 'text-gray-700')}>
                     {t.label}
-                  </Text>
-                  <Text size="xs" c="dimmed" ta="center" lh={1.2}>{t.desc}</Text>
-                </UnstyledButton>
+                  </span>
+                  <span className="text-[10px] text-gray-400 leading-tight">{t.desc}</span>
+                </button>
               ))}
-            </Group>
-          </Box>
+            </div>
+          </div>
 
           <Button
             onClick={handleGenerate}
             disabled={!selectedAccount || !theme.trim()}
-            loading={loading}
-            variant="gradient"
-            gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-            size="lg"
-            radius="md"
-            leftSection={<Sparkles size={17} />}
-            fullWidth
-            style={{ boxShadow: '0 4px 20px rgba(124,58,237,0.2)' }}
+            isLoading={loading}
+            loadingText="生成中..."
+            className="w-full gap-2 py-2.5"
           >
+            <Sparkles className="h-4 w-4" />
             AI生成する
           </Button>
-        </Stack>
+        </div>
       )}
 
-      {/* Step 2: プレビュー */}
+      {/* Step 2 */}
       {step === 'preview' && (
-        <Stack gap="md">
-          {/* 投稿文 */}
-          <Card withBorder radius="lg" shadow="sm" p="lg">
-            <Group justify="space-between" mb="sm">
-              <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.04em' }}>投稿文</Text>
-              <Button
-                variant="subtle"
-                color="violet"
-                size="xs"
-                leftSection={<RefreshCw size={12} className={loading ? 'animate-spin' : ''} />}
+        <div className="space-y-4">
+          {/* Text */}
+          <Card className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>投稿文</Label>
+              <button
                 onClick={handleGenerate}
                 disabled={loading}
-                px={8}
+                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
               >
+                <RefreshCw className={cx('h-3 w-3', loading && 'animate-spin')} />
                 再生成
-              </Button>
-            </Group>
+              </button>
+            </div>
             <Textarea
               value={generatedText}
               onChange={e => setGeneratedText(e.target.value)}
-              autosize
-              minRows={8}
-              maxRows={15}
-              styles={{
-                input: {
-                  border: 'none',
-                  padding: 0,
-                  fontSize: 14,
-                  lineHeight: 1.8,
-                  resize: 'none',
-                  background: 'transparent',
-                },
-              }}
+              rows={9}
+              className="resize-none border-none bg-transparent p-0 shadow-none focus:ring-0"
             />
-            <Group justify="space-between" pt="sm" style={{ borderTop: '1px solid var(--mantine-color-gray-1)' }}>
-              <Text size="xs" c="dimmed">{generatedText.length} 文字</Text>
-              <Box
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: generatedText.length > 450
-                    ? 'var(--mantine-color-red-5)'
-                    : generatedText.length > 350
-                    ? 'var(--mantine-color-yellow-5)'
-                    : 'var(--mantine-color-teal-5)',
-                }}
-              />
-            </Group>
+            <div className="flex items-center justify-between border-t border-gray-100 pt-2">
+              <span className="text-xs text-gray-400">{generatedText.length} 文字</span>
+              <div className={cx(
+                'h-1.5 w-1.5 rounded-full',
+                generatedText.length > 450 ? 'bg-red-400' : generatedText.length > 350 ? 'bg-yellow-400' : 'bg-emerald-400',
+              )} />
+            </div>
           </Card>
 
-          {/* 図解画像 */}
-          <Card withBorder radius="lg" shadow="sm" p="lg">
-            <Group justify="space-between" mb="sm">
-              <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.04em' }}>図解画像</Text>
-              <Button
-                variant="subtle"
-                color="violet"
-                size="xs"
-                leftSection={imageLoading ? <Loader size={12} color="violet" /> : <ImageIcon size={12} />}
+          {/* Image */}
+          <Card className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>図解画像</Label>
+              <button
                 onClick={handleGenerateImage}
                 disabled={imageLoading}
-                px={8}
+                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
               >
+                <ImageIcon className="h-3 w-3" />
                 {imageLoading ? '生成中...' : imageUrl ? '再生成' : '図解を生成'}
-              </Button>
-            </Group>
+              </button>
+            </div>
             {imageUrl ? (
-              <Image src={imageUrl} alt="生成された図解" radius="md" />
+              <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
             ) : (
-              <Box
-                style={{
-                  height: 140,
-                  border: '2px dashed var(--mantine-color-gray-2)',
-                  borderRadius: 10,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                }}
-              >
-                <ImageIcon size={20} color="var(--mantine-color-gray-4)" />
-                <Text size="xs" c="dimmed">「図解を生成」ボタンで追加</Text>
-              </Box>
+              <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-gray-200">
+                <ImageIcon className="h-5 w-5 text-gray-300" />
+                <span className="text-xs text-gray-400">「図解を生成」で追加</span>
+              </div>
             )}
           </Card>
 
-          {/* 予約投稿 */}
-          <Card withBorder radius="lg" shadow="sm" p="lg">
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.04em' }} mb="sm">
-              予約投稿
-            </Text>
+          {/* Schedule */}
+          <Card className="space-y-2">
+            <Label>予約投稿</Label>
             <input
               type="datetime-local"
               value={scheduledAt}
               onChange={e => setScheduledAt(e.target.value)}
-              style={{
-                border: '1px solid var(--mantine-color-gray-3)',
-                borderRadius: 8,
-                padding: '8px 12px',
-                fontSize: 14,
-                color: 'var(--mantine-color-dark-6)',
-                background: 'var(--mantine-color-gray-0)',
-                outline: 'none',
-              }}
+              className={cx(
+                'rounded-md border px-3 py-2 text-sm outline-hidden transition',
+                'border-gray-300 bg-white text-gray-900',
+                'focus:border-blue-500 focus:ring-2 focus:ring-blue-200',
+              )}
             />
-            {!scheduledAt && (
-              <Text size="xs" c="dimmed" mt={6}>空白の場合は下書き保存になります</Text>
-            )}
+            {!scheduledAt && <p className="text-xs text-gray-400">空白の場合は下書き保存になります</p>}
           </Card>
 
-          {/* アクションボタン */}
-          <Group grow>
+          {/* Actions */}
+          <div className="flex gap-3">
             <Button
-              variant="default"
-              size="md"
-              radius="md"
-              leftSection={<Save size={15} />}
+              variant="secondary"
               onClick={() => handleSave(false)}
               disabled={loading}
+              className="flex-1 gap-2"
             >
+              <Save className="h-4 w-4" />
               {scheduledAt ? '予約保存' : '下書き保存'}
             </Button>
             <Button
-              variant="gradient"
-              gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
-              size="md"
-              radius="md"
-              leftSection={loading ? <Loader size={14} color="white" /> : <Send size={15} />}
               onClick={() => handleSave(true)}
               disabled={loading || !!scheduledAt}
-              style={{ boxShadow: '0 4px 16px rgba(124,58,237,0.2)' }}
+              isLoading={loading}
+              loadingText="投稿中..."
+              className="flex-1 gap-2"
             >
+              <Send className="h-4 w-4" />
               今すぐ投稿
             </Button>
-          </Group>
-        </Stack>
+          </div>
+        </div>
       )}
-    </Box>
+    </div>
   )
 }
