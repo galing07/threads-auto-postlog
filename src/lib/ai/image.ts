@@ -19,12 +19,13 @@ export async function generateDiagramImage({
 
   const fullPrompt = `${styleGuide[style]}, ${prompt}. No text in Japanese, use simple English labels or numbers only. High quality, suitable for social media.`
 
+  // gpt-image-2 は組織認証が必要。認証後に 'gpt-image-2' + quality:'medium' に戻す
   const response = await client.images.generate({
-    model: 'gpt-image-2',
+    model: 'dall-e-3',
     prompt: fullPrompt,
     n: 1,
     size: '1024x1024',
-    quality: 'medium',
+    quality: 'standard',
   })
 
   const imageUrl = response.data?.[0]?.url
