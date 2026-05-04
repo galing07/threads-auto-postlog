@@ -24,7 +24,7 @@ export async function generateDiagramImage({
     prompt: fullPrompt,
     n: 1,
     size: '1024x1024',
-    quality: 'standard',
+    quality: 'medium',
   })
 
   const imageUrl = response.data?.[0]?.url
