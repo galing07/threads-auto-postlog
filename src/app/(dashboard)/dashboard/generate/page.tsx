@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft, CheckCircle } from 'lucide-react'
+import { Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft, CheckCircle, Lightbulb } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { cx } from '@/lib/utils'
 import type { Account, Post } from '@/types/database'
@@ -35,6 +34,8 @@ export default function GeneratePage() {
   const [postType, setPostType] = useState<PostType | ''>('')
   const [step, setStep] = useState<Step>('input')
   const [loading, setLoading] = useState(false)
+  const [themeSuggestions, setThemeSuggestions] = useState<string[]>([])
+  const [suggestLoading, setSuggestLoading] = useState(false)
   const [generatedText, setGeneratedText] = useState('')
   const [generatedSummary, setGeneratedSummary] = useState('')
   const [imageUrl, setImageUrl] = useState('')
@@ -51,10 +52,31 @@ export default function GeneratePage() {
       })
   }, [])
 
-  const isDemoMode = !selectedAccount  // アカウント未選択 = デモモード
+  const isDemoMode = !selectedAccount
 
-  async function handleGenerate() {
-    if (!theme.trim()) return
+  async function handleSuggestThemes() {
+    setSuggestLoading(true)
+    setThemeSuggestions([])
+    try {
+      const res = await fetch('/api/generate/themes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId: selectedAccount || undefined }),
+      })
+      const data = await res.json() as { themes?: string[]; error?: string }
+      if (data.error) throw new Error(data.error)
+      setThemeSuggestions(data.themes ?? [])
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'テーマ生成に失敗しました')
+    } finally {
+      setSuggestLoading(false)
+    }
+  }
+
+  async function handleGenerate(overrideTheme?: string) {
+    const targetTheme = overrideTheme ?? theme
+    if (!targetTheme.trim()) return
+    if (overrideTheme) setTheme(overrideTheme)
     setLoading(true)
     try {
       const res = await fetch('/api/generate/text', {
@@ -62,7 +84,7 @@ export default function GeneratePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accountId: selectedAccount || undefined,
-          theme,
+          theme: targetTheme,
           postType: postType || undefined,
         }),
       })
@@ -135,12 +157,13 @@ export default function GeneratePage() {
     setImageUrl('')
     setScheduledAt('')
     setSavedPost(null)
+    setThemeSuggestions([])
   }
 
   if (step === 'done') {
     return (
       <div className="p-6 lg:p-8 max-w-2xl">
-        <Card className="text-center py-12">
+        <Card className="py-12 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-50">
             <CheckCircle className="h-6 w-6 text-green-600" />
           </div>
@@ -210,27 +233,54 @@ export default function GeneratePage() {
               )}
             </div>
 
-            {/* デモモード時の説明 */}
-            {isDemoMode && (
-              <div className="rounded-md border border-[#e5edf5] bg-[#F8FAFC] px-3 py-2.5 text-xs text-gray-500 leading-relaxed">
-                <span className="font-medium text-gray-600">デモモードの設定：</span>
-                　転職ノウハウ発信者 / 高卒20代向け / フランクな文体
-              </div>
-            )}
-
             {/* テーマ入力 */}
             <div>
-              <SectionLabel>投稿テーマ</SectionLabel>
-              <Input
+              <div className="mb-1.5 flex items-center justify-between">
+                <SectionLabel>投稿テーマ</SectionLabel>
+                <button
+                  onClick={handleSuggestThemes}
+                  disabled={suggestLoading}
+                  className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] disabled:opacity-50 transition-colors"
+                >
+                  <Lightbulb className={cx('h-3 w-3', suggestLoading && 'animate-pulse')} />
+                  {suggestLoading ? '考え中...' : 'テーマを提案'}
+                </button>
+              </div>
+
+              {/* テーマ候補チップ */}
+              {themeSuggestions.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {themeSuggestions.map((t, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setTheme(t)
+                        setThemeSuggestions([])
+                      }}
+                      className={cx(
+                        'rounded-full border px-3 py-1 text-xs transition-all text-left',
+                        theme === t
+                          ? 'border-[#00A3BF] bg-[#E9F7F9] text-[#006F83]'
+                          : 'border-[#e5edf5] bg-white text-gray-600 hover:border-[#00A3BF] hover:text-[#006F83]',
+                      )}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <input
                 value={theme}
                 onChange={e => setTheme(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleGenerate()}
-                placeholder="例：高卒でも転職できる3つの理由"
+                placeholder="例：高卒でも転職できる3つの理由（または↑から選択）"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden transition placeholder-gray-400 focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
               />
             </div>
           </Card>
 
-          {/* Post type picker */}
+          {/* 投稿の型 */}
           <div>
             <div className="mb-2 flex items-center justify-between">
               <SectionLabel>投稿の型</SectionLabel>
@@ -263,7 +313,7 @@ export default function GeneratePage() {
           </div>
 
           <Button
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             disabled={!theme.trim()}
             isLoading={loading}
             loadingText="生成中..."
@@ -278,7 +328,6 @@ export default function GeneratePage() {
       {/* Step 2: プレビュー */}
       {step === 'preview' && (
         <div className="space-y-4">
-          {/* デモモードバナー */}
           {isDemoMode && (
             <div className="flex items-center justify-between rounded-md border border-[#e5edf5] bg-[#F8FAFC] px-4 py-2.5">
               <div className="flex items-center gap-2">
@@ -291,12 +340,24 @@ export default function GeneratePage() {
             </div>
           )}
 
-          {/* Text */}
+          {/* テーマ表示 */}
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">テーマ</span>
+            <span className="text-gray-700">{theme}</span>
+            <button
+              onClick={() => setStep('input')}
+              className="ml-auto text-xs text-[#006F83] hover:underline"
+            >
+              変更
+            </button>
+          </div>
+
+          {/* 投稿文 */}
           <Card className="space-y-3">
             <div className="flex items-center justify-between">
               <SectionLabel>投稿文</SectionLabel>
               <button
-                onClick={handleGenerate}
+                onClick={() => handleGenerate()}
                 disabled={loading}
                 className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] disabled:opacity-50"
               >
@@ -319,12 +380,10 @@ export default function GeneratePage() {
             </div>
           </Card>
 
-          {/* Image */}
+          {/* 図解画像 */}
           <Card className="space-y-3">
             <div className="flex items-center justify-between">
-              <div>
-                <SectionLabel>図解画像</SectionLabel>
-              </div>
+              <SectionLabel>図解画像</SectionLabel>
               <button
                 onClick={handleGenerateImage}
                 disabled={imageLoading}
@@ -339,12 +398,12 @@ export default function GeneratePage() {
             ) : (
               <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
                 <ImageIcon className="h-5 w-5 text-gray-300" />
-                <span className="text-xs text-gray-400">「図解を生成」ボタンで追加（任意・有料）</span>
+                <span className="text-xs text-gray-400">「図解を生成」ボタンで追加（任意）</span>
               </div>
             )}
           </Card>
 
-          {/* Schedule — アカウントがある場合のみ */}
+          {/* 予約投稿（アカウントありのみ） */}
           {!isDemoMode && (
             <Card className="space-y-2">
               <SectionLabel>予約投稿</SectionLabel>
@@ -358,7 +417,7 @@ export default function GeneratePage() {
             </Card>
           )}
 
-          {/* Actions */}
+          {/* アクション */}
           <div className="flex gap-3">
             <Button
               variant="secondary"
