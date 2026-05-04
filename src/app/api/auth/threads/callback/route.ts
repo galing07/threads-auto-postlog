@@ -9,12 +9,10 @@ export async function GET(req: NextRequest) {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
-  // エラー or キャンセル
   if (error || !code) {
     return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=cancelled`)
   }
 
-  // cookie からペンディングデータ取得
   const pendingCookie = req.cookies.get('threads_oauth_pending')?.value
   if (!pendingCookie) {
     return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=session_expired`)
@@ -27,6 +25,7 @@ export async function GET(req: NextRequest) {
     targetAudience: string
     postTopics: string
     state: string
+    userId: string
   }
   try {
     pending = JSON.parse(pendingCookie)
@@ -34,13 +33,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=invalid_state`)
   }
 
-  // CSRF チェック
   if (pending.state !== state) {
     return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=invalid_state`)
   }
 
-  const clientId = process.env.THREADS_CLIENT_ID!
-  const clientSecret = process.env.THREADS_CLIENT_SECRET!
+  // cookieのuserIdでMeta App設定を取得（サービスロールを使わずRLSを迂回するため管理者クライアント相当の処理）
+  const supabase = await createServerSupabaseClient()
+
+  // 認証済みセッションを確認
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user || user.id !== pending.userId) {
+    return NextResponse.redirect(`${appUrl}/login`)
+  }
+
+  const { data: metaApp } = await supabase
+    .from('user_meta_apps')
+    .select('threads_client_id, threads_client_secret')
+    .eq('user_id', pending.userId)
+    .single()
+
+  if (!metaApp) {
+    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=meta_not_configured`)
+  }
+
+  const { threads_client_id: clientId, threads_client_secret: clientSecret } = metaApp
   const redirectUri = `${appUrl}/api/auth/threads/callback`
 
   try {
@@ -56,7 +72,11 @@ export async function GET(req: NextRequest) {
         code,
       }),
     })
-    const tokenData = await tokenRes.json() as { access_token?: string; user_id?: number; error_message?: string }
+    const tokenData = await tokenRes.json() as {
+      access_token?: string
+      user_id?: number
+      error_message?: string
+    }
 
     if (!tokenData.access_token) {
       console.error('Token exchange failed:', tokenData)
@@ -70,15 +90,11 @@ export async function GET(req: NextRequest) {
     const longTokenRes = await fetch(
       `https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${clientSecret}&access_token=${shortToken}`
     )
-    const longTokenData = await longTokenRes.json() as { access_token?: string; expires_in?: number }
-    const accessToken = longTokenData.access_token ?? shortToken
-
-    // Step 3: ユーザー認証してアカウント作成
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.redirect(`${appUrl}/login`)
+    const longTokenData = await longTokenRes.json() as {
+      access_token?: string
+      expires_in?: number
     }
+    const accessToken = longTokenData.access_token ?? shortToken
 
     const postTopics = pending.postTopics
       ? pending.postTopics.split('、').map(s => s.trim()).filter(Boolean)
@@ -103,7 +119,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=db_failed`)
     }
 
-    // cookieを削除してリダイレクト
     const res = NextResponse.redirect(`${appUrl}/dashboard/accounts?success=1`)
     res.cookies.delete('threads_oauth_pending')
     return res

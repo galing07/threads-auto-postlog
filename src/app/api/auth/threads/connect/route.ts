@@ -6,6 +6,19 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+
+  // ユーザー固有のMeta App設定を取得
+  const { data: metaApp } = await supabase
+    .from('user_meta_apps')
+    .select('threads_client_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!metaApp?.threads_client_id) {
+    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=meta_not_configured`)
+  }
+
   const { searchParams } = new URL(req.url)
   const name = searchParams.get('name') ?? ''
   const persona = searchParams.get('persona') ?? ''
@@ -13,18 +26,23 @@ export async function GET(req: NextRequest) {
   const targetAudience = searchParams.get('targetAudience') ?? ''
   const postTopics = searchParams.get('postTopics') ?? ''
 
-  // CSRF対策のstateトークン生成
   const state = crypto.randomUUID()
 
-  // アカウント情報をcookieに保存（OAuth完了後に使う）
-  const pendingData = JSON.stringify({ name, persona, tone, targetAudience, postTopics, state })
+  // cookieにアカウント情報 + userId を保存（callback で使う）
+  const pendingData = JSON.stringify({
+    name,
+    persona,
+    tone,
+    targetAudience,
+    postTopics,
+    state,
+    userId: user.id,
+  })
 
-  const clientId = process.env.THREADS_CLIENT_ID!
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
   const redirectUri = `${appUrl}/api/auth/threads/callback`
 
   const authUrl = new URL('https://threads.net/oauth/authorize')
-  authUrl.searchParams.set('client_id', clientId)
+  authUrl.searchParams.set('client_id', metaApp.threads_client_id)
   authUrl.searchParams.set('redirect_uri', redirectUri)
   authUrl.searchParams.set('scope', 'threads_basic,threads_content_publish')
   authUrl.searchParams.set('response_type', 'code')
@@ -35,7 +53,7 @@ export async function GET(req: NextRequest) {
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
-    maxAge: 600, // 10分
+    maxAge: 600,
     path: '/',
   })
 
