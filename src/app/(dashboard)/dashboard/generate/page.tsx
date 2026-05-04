@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft, CheckCircle, Lightbulb } from 'lucide-react'
+import { Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft, CheckCircle, Lightbulb, Wand2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
@@ -40,6 +40,8 @@ export default function GeneratePage() {
   const [generatedSummary, setGeneratedSummary] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [imageLoading, setImageLoading] = useState(false)
+  const [imageEditPrompt, setImageEditPrompt] = useState('')
+  const [imageEditing, setImageEditing] = useState(false)
   const [scheduledAt, setScheduledAt] = useState('')
   const [savedPost, setSavedPost] = useState<Post | null>(null)
 
@@ -119,6 +121,26 @@ export default function GeneratePage() {
     }
   }
 
+  async function handleEditImage() {
+    if (!imageUrl || !imageEditPrompt.trim()) return
+    setImageEditing(true)
+    try {
+      const res = await fetch('/api/generate/image/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl, editPrompt: imageEditPrompt }),
+      })
+      const data = await res.json() as { imageUrl: string; error?: string }
+      if (data.error) throw new Error(data.error)
+      setImageUrl(data.imageUrl)
+      setImageEditPrompt('')
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '画像編集に失敗しました')
+    } finally {
+      setImageEditing(false)
+    }
+  }
+
   async function handleSave(publish = false) {
     setLoading(true)
     try {
@@ -155,6 +177,7 @@ export default function GeneratePage() {
     setGeneratedText('')
     setGeneratedSummary('')
     setImageUrl('')
+    setImageEditPrompt('')
     setScheduledAt('')
     setSavedPost(null)
     setThemeSuggestions([])
@@ -394,7 +417,28 @@ export default function GeneratePage() {
               </button>
             </div>
             {imageUrl ? (
-              <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
+              <>
+                <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
+                {/* 修正プロンプト */}
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={imageEditPrompt}
+                    onChange={e => setImageEditPrompt(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleEditImage()}
+                    placeholder="修正指示を入力（例：背景を青に、テキストを日本語に）"
+                    disabled={imageEditing}
+                    className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden placeholder-gray-400 transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={handleEditImage}
+                    disabled={!imageEditPrompt.trim() || imageEditing}
+                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-[#00A3BF] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#008CA8] disabled:opacity-40"
+                  >
+                    <Wand2 className={cx('h-3.5 w-3.5', imageEditing && 'animate-pulse')} />
+                    {imageEditing ? '修正中...' : '修正'}
+                  </button>
+                </div>
+              </>
             ) : (
               <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
                 <ImageIcon className="h-5 w-5 text-gray-300" />
