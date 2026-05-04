@@ -20,36 +20,33 @@ export async function generateDiagramImage({
 
   const fullPrompt = `${styleGuide[style]}, ${prompt}. No text in Japanese, use simple English labels or numbers only. High quality, suitable for social media.`
 
-  // gpt-image-2 は response_format 非対応。デフォルトで b64_json を返す
-  const response = await client.images.generate({
+  // gpt-image-2: response_format 非対応、常に b64_json で返る
+  // output_format は SDK 型定義未対応のため any でキャスト
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const response = await (client.images.generate as (p: any) => Promise<{ data: Array<{ b64_json?: string }> }>)({
     model: 'gpt-image-2',
     prompt: fullPrompt,
     n: 1,
     size: '1024x1024',
     quality: 'medium',
+    output_format: 'webp',
   })
 
-  const item = response.data?.[0]
-  if (!item) throw new Error('画像生成に失敗しました')
-
-  // URL だけ返ってきた場合はそのまま返す（一時URLだが投稿時に使用可能）
-  if (!item.b64_json && item.url) return item.url
-
-  const b64 = item.b64_json
+  const b64 = response.data[0]?.b64_json
   if (!b64) throw new Error('画像データが取得できませんでした')
 
-  // Supabase Storageに保存してパブリックURLを返す
+  // Supabase Storage に保存してパブリック URL を返す
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
 
-  const fileName = `generated/${Date.now()}-${Math.random().toString(36).slice(2)}.png`
+  const fileName = `generated/${Date.now()}-${Math.random().toString(36).slice(2)}.webp`
   const buffer = Buffer.from(b64, 'base64')
 
   const { error } = await supabase.storage
     .from('post-images')
-    .upload(fileName, buffer, { contentType: 'image/png', upsert: false })
+    .upload(fileName, buffer, { contentType: 'image/webp', upsert: false })
 
   if (error) throw new Error(`Storage upload failed: ${error.message}`)
 
