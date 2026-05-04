@@ -20,18 +20,23 @@ export async function generateDiagramImage({
 
   const fullPrompt = `${styleGuide[style]}, ${prompt}. No text in Japanese, use simple English labels or numbers only. High quality, suitable for social media.`
 
-  // gpt-image-2 は b64_json で受け取る（URL形式は500エラーになる場合あり）
+  // gpt-image-2 は response_format 非対応。デフォルトで b64_json を返す
   const response = await client.images.generate({
     model: 'gpt-image-2',
     prompt: fullPrompt,
     n: 1,
     size: '1024x1024',
     quality: 'medium',
-    response_format: 'b64_json',
   })
 
-  const b64 = response.data?.[0]?.b64_json
-  if (!b64) throw new Error('画像生成に失敗しました')
+  const item = response.data?.[0]
+  if (!item) throw new Error('画像生成に失敗しました')
+
+  // URL だけ返ってきた場合はそのまま返す（一時URLだが投稿時に使用可能）
+  if (!item.b64_json && item.url) return item.url
+
+  const b64 = item.b64_json
+  if (!b64) throw new Error('画像データが取得できませんでした')
 
   // Supabase Storageに保存してパブリックURLを返す
   const supabase = createClient(
