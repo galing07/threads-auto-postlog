@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       console.warn('[threads/delete] no matching account for signed_request', { confirmationCode })
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sns-auto-post.vercel.app'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://threads-auto-post-umber.vercel.app'
 
     return NextResponse.json({
       url: `${appUrl}/deletion-status?code=${confirmationCode}`,

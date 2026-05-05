@@ -16,9 +16,20 @@ export async function POST(req: NextRequest) {
     clientSecret?: string
   }
 
-  const { name = '', persona = '', tone = 'friendly', targetAudience = '', postTopics = '', clientId = '', clientSecret = '' } = body
+  const {
+    name = '',
+    persona = '',
+    tone = 'friendly',
+    targetAudience = '',
+    postTopics = '',
+    clientId: bodyClientId = '',
+    clientSecret: bodyClientSecret = '',
+  } = body
 
-  if (!clientId.trim() || !clientSecret.trim()) {
+  const clientId = bodyClientId.trim() || process.env.THREADS_APP_ID || ''
+  const clientSecret = bodyClientSecret.trim() || process.env.THREADS_APP_SECRET || ''
+
+  if (!clientId || !clientSecret) {
     return NextResponse.json({ error: 'Client ID と Client Secret を入力してください' }, { status: 400 })
   }
 
