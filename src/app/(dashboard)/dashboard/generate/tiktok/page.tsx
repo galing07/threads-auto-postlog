@@ -225,14 +225,14 @@ export default function TikTokGeneratePage() {
             <div>
               <SectionLabel>アカウント</SectionLabel>
               {accounts.length === 0 ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+                <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-3">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                    <Sparkles className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
                     <div>
-                      <p className="text-sm font-medium text-amber-700">TikTokアカウントが未登録です</p>
-                      <p className="mt-0.5 text-xs text-amber-600">
-                        アカウント管理ページでプラットフォームを「TikTok」に設定したアカウントを追加してください。
-                        デモモードで生成のみ実行できます。
+                      <p className="text-sm font-medium text-blue-700">デモモードで動作中</p>
+                      <p className="mt-0.5 text-xs text-blue-600">
+                        アカウント未登録でもスクリプト生成・下書き保存ができます。
+                        HeyGen APIを登録後、アカウントを追加するとアバター動画も生成できます。
                       </p>
                     </div>
                   </div>
@@ -409,7 +409,7 @@ export default function TikTokGeneratePage() {
                   <p className="text-sm font-medium text-amber-700">HeyGenが未設定です</p>
                   <p className="mt-0.5 text-xs text-amber-600">
                     アカウント設定でHeyGen アバターIDとボイスIDを登録すると、アバター動画を自動生成できます。
-                    スクリプトのみ下書き保存も可能です。
+                    スクリプトのみ下書き保存も可能です（アカウントなしでもOK）。
                   </p>
                 </div>
               </div>
