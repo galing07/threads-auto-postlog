@@ -49,7 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <div>
             <p className="text-sm font-bold text-white leading-tight">AutoPost</p>
-            <p className="text-[11px] text-slate-400 leading-tight">Threads 自動投稿</p>
+            <p className="text-[11px] text-slate-400 leading-tight">SNS 自動投稿</p>
           </div>
         </div>
 

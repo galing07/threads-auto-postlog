@@ -2,17 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Send, Trash2, Clock, User, ImageIcon, RefreshCw } from 'lucide-react'
+import {
+  FileText, Send, Trash2, Clock, User, ImageIcon, RefreshCw,
+  CheckCircle, ChevronDown, ChevronUp,
+} from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { cx } from '@/lib/utils'
 import type { Post } from '@/types/database'
 
-const STATUS_LABEL: Record<string, { label: string; className: string }> = {
-  draft:     { label: '下書き',   className: 'bg-gray-100 text-gray-600' },
-  scheduled: { label: '予約済み', className: 'bg-blue-50 text-blue-700' },
-  posted:    { label: '投稿済み', className: 'bg-green-50 text-green-700' },
-  failed:    { label: '失敗',     className: 'bg-red-50 text-red-600' },
+const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
+  draft:     { label: '下書き',   cls: 'bg-gray-100 text-gray-600' },
+  scheduled: { label: '予約済み', cls: 'bg-[#E9F7F9] text-[#006F83]' },
+  posted:    { label: '投稿済み', cls: 'bg-green-50 text-green-700' },
+  failed:    { label: 'エラー',   cls: 'bg-red-50 text-red-600' },
 }
 
 function formatDate(iso: string) {
@@ -20,6 +23,172 @@ function formatDate(iso: string) {
     month: 'numeric', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+function DraftCard({
+  post,
+  onPublish,
+  onDelete,
+  publishing,
+  deleting,
+}: {
+  post: Post
+  onPublish: (id: string) => void
+  onDelete: (id: string) => void
+  publishing: boolean
+  deleting: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [imgOpen, setImgOpen] = useState(false)
+
+  const { label, cls } = STATUS_CONFIG[post.status] ?? STATUS_CONFIG.draft
+  const text = post.text_content ?? ''
+  const isLong = text.length > 120
+  const displayText = isLong && !expanded ? text.slice(0, 120) + '…' : text
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex gap-0">
+        {/* メディアエリア（動画 > 画像 > なし） */}
+        <div className="shrink-0">
+          {post.video_url ? (
+            <>
+              <button onClick={() => setImgOpen(true)} className="block relative h-36 w-36 overflow-hidden bg-black">
+                <video
+                  src={post.video_url}
+                  className="h-36 w-36 object-cover"
+                  muted
+                  preload="metadata"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90">
+                    <div className="h-0 w-0 ml-0.5 border-y-[6px] border-y-transparent border-l-[10px] border-l-gray-900" />
+                  </div>
+                </div>
+              </button>
+              {imgOpen && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                  onClick={() => setImgOpen(false)}
+                >
+                  <video
+                    src={post.video_url}
+                    controls
+                    autoPlay
+                    className="max-h-[90vh] max-w-[90vw] rounded-xl shadow-2xl"
+                    onClick={e => e.stopPropagation()}
+                  />
+                </div>
+              )}
+            </>
+          ) : post.image_url ? (
+            <>
+              <button onClick={() => setImgOpen(true)} className="block">
+                <img
+                  src={post.image_url}
+                  alt="投稿画像"
+                  className="h-36 w-36 object-cover transition hover:opacity-90"
+                />
+              </button>
+              {imgOpen && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+                  onClick={() => setImgOpen(false)}
+                >
+                  <img
+                    src={post.image_url}
+                    alt="投稿画像"
+                    className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+                    onClick={e => e.stopPropagation()}
+                  />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex h-36 w-36 flex-col items-center justify-center bg-gray-50">
+              <ImageIcon className="h-6 w-6 text-gray-200" />
+              <span className="mt-1 text-[10px] text-gray-300">なし</span>
+            </div>
+          )}
+        </div>
+
+        {/* テキストエリア */}
+        <div className="flex min-w-0 flex-1 flex-col p-4">
+          {/* メタ情報 */}
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium', cls)}>
+              {label}
+            </span>
+            {post.theme && (
+              <span className="truncate text-[11px] text-gray-400">#{post.theme}</span>
+            )}
+            <span className="ml-auto text-[11px] text-gray-400">
+              {post.scheduled_at
+                ? <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDate(post.scheduled_at)}</span>
+                : formatDate(post.created_at)
+              }
+            </span>
+          </div>
+
+          {/* 投稿本文 */}
+          <p className="flex-1 whitespace-pre-line text-sm leading-relaxed text-gray-700">
+            {displayText}
+          </p>
+
+          {/* 展開ボタン & アクション */}
+          <div className="mt-2 flex items-center gap-3">
+            {isLong && (
+              <button
+                onClick={() => setExpanded(v => !v)}
+                className="flex items-center gap-0.5 text-xs text-[#006F83] hover:text-[#005A6B] transition-colors"
+              >
+                {expanded
+                  ? <><ChevronUp className="h-3.5 w-3.5" />閉じる</>
+                  : <><ChevronDown className="h-3.5 w-3.5" />続きを見る</>
+                }
+              </button>
+            )}
+            <div className="ml-auto flex gap-2">
+              {(post.status === 'draft' || post.status === 'failed') && post.account_id && (
+                <Button
+                  onClick={() => onPublish(post.id)}
+                  disabled={publishing}
+                  isLoading={publishing}
+                  loadingText="投稿中..."
+                  className="gap-1 py-1 px-2.5 text-xs"
+                >
+                  <Send className="h-3 w-3" />
+                  今すぐ投稿
+                </Button>
+              )}
+              {post.status !== 'posted' && (
+                <button
+                  onClick={() => onDelete(post.id)}
+                  disabled={deleting}
+                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  削除
+                </button>
+              )}
+              {post.status === 'posted' && (
+                <span className="flex items-center gap-1 text-[11px] text-green-600">
+                  <CheckCircle className="h-3.5 w-3.5" />投稿済み
+                </span>
+              )}
+            </div>
+          </div>
+
+          {post.account_id && (
+            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-gray-300">
+              <User className="h-3 w-3" />
+              アカウントあり
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
 }
 
 export default function DraftsPage() {
@@ -43,7 +212,12 @@ export default function DraftsPage() {
   async function handlePublish(postId: string) {
     setPublishing(postId)
     try {
-      await fetch(`/api/posts/${postId}/publish`, { method: 'POST' })
+      const res = await fetch(`/api/posts/${postId}/publish`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        alert(data.error ?? '投稿に失敗しました')
+        return
+      }
       await load()
     } finally {
       setPublishing(null)
@@ -54,7 +228,11 @@ export default function DraftsPage() {
     if (!confirm('この投稿を削除しますか？')) return
     setDeleting(postId)
     try {
-      await fetch(`/api/posts/${postId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/posts/${postId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        alert('削除に失敗しました')
+        return
+      }
       setPosts(prev => prev.filter(p => p.id !== postId))
     } finally {
       setDeleting(null)
@@ -102,7 +280,7 @@ export default function DraftsPage() {
                 : 'text-gray-500 hover:text-gray-700',
             )}
           >
-            {f === 'all' ? 'すべて' : STATUS_LABEL[f].label}
+            {f === 'all' ? 'すべて' : STATUS_CONFIG[f].label}
             <span className={cx(
               'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px]',
               filter === f ? 'bg-gray-100 text-gray-600' : 'bg-gray-200 text-gray-500',
@@ -124,7 +302,7 @@ export default function DraftsPage() {
             <FileText className="h-5 w-5 text-gray-400" />
           </div>
           <p className="text-sm font-medium text-gray-500">
-            {filter === 'all' ? '投稿がありません' : `${STATUS_LABEL[filter].label}の投稿がありません`}
+            {filter === 'all' ? '投稿がありません' : `${STATUS_CONFIG[filter].label}の投稿がありません`}
           </p>
           <p className="mt-0.5 text-xs text-gray-400">「投稿生成」から作成してください</p>
           <Button onClick={() => router.push('/dashboard/generate')} className="mt-4">
@@ -134,93 +312,14 @@ export default function DraftsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(post => (
-            <Card key={post.id} className="p-4">
-              <div className="flex items-start gap-3">
-                {/* 画像サムネイル */}
-                <div className="shrink-0">
-                  {post.image_url ? (
-                    <img
-                      src={post.image_url}
-                      alt=""
-                      className="h-16 w-16 rounded-md object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-16 w-16 items-center justify-center rounded-md bg-gray-100">
-                      <ImageIcon className="h-5 w-5 text-gray-300" />
-                    </div>
-                  )}
-                </div>
-
-                {/* 本文 */}
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <span className={cx(
-                      'rounded-full px-2 py-0.5 text-[11px] font-medium',
-                      STATUS_LABEL[post.status]?.className ?? 'bg-gray-100 text-gray-600',
-                    )}>
-                      {STATUS_LABEL[post.status]?.label ?? post.status}
-                    </span>
-                    {post.theme && (
-                      <span className="truncate text-xs text-gray-400">{post.theme}</span>
-                    )}
-                  </div>
-                  <p className="line-clamp-3 text-sm text-gray-700 whitespace-pre-line">
-                    {post.text_content}
-                  </p>
-                  <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-400">
-                    {post.account_id && (
-                      <span className="flex items-center gap-1">
-                        <User className="h-3 w-3" />
-                        アカウントあり
-                      </span>
-                    )}
-                    {post.scheduled_at && (
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatDate(post.scheduled_at)}
-                      </span>
-                    )}
-                    <span className="ml-auto">{formatDate(post.created_at)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              {(post.status === 'draft' || post.status === 'failed') && post.account_id && (
-                <div className="mt-3 flex gap-2 border-t border-gray-100 pt-3">
-                  <Button
-                    onClick={() => handlePublish(post.id)}
-                    disabled={publishing === post.id}
-                    isLoading={publishing === post.id}
-                    loadingText="投稿中..."
-                    className="flex-1 gap-1.5 py-1.5 text-xs"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    今すぐ投稿
-                  </Button>
-                  <button
-                    onClick={() => handleDelete(post.id)}
-                    disabled={deleting === post.id}
-                    className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    削除
-                  </button>
-                </div>
-              )}
-              {(post.status === 'draft') && !post.account_id && (
-                <div className="mt-3 flex justify-end border-t border-gray-100 pt-3">
-                  <button
-                    onClick={() => handleDelete(post.id)}
-                    disabled={deleting === post.id}
-                    className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    削除
-                  </button>
-                </div>
-              )}
-            </Card>
+            <DraftCard
+              key={post.id}
+              post={post}
+              onPublish={handlePublish}
+              onDelete={handleDelete}
+              publishing={publishing === post.id}
+              deleting={deleting === post.id}
+            />
           ))}
         </div>
       )}

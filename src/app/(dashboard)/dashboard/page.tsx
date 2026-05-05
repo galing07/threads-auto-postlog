@@ -33,18 +33,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/posts')
-      .then(r => r.json())
-      .then((posts: Post[]) => {
-        setRecentPosts(posts.slice(0, 5))
-        setStats({
-          draft:     posts.filter(p => p.status === 'draft').length,
-          scheduled: posts.filter(p => p.status === 'scheduled').length,
-          posted:    posts.filter(p => p.status === 'posted').length,
-          failed:    posts.filter(p => p.status === 'failed').length,
-        })
-      })
-      .finally(() => setLoading(false))
+    Promise.all([
+      fetch('/api/posts/stats').then(r => r.json()) as Promise<Stats>,
+      fetch('/api/posts?limit=5').then(r => r.json()) as Promise<Post[]>,
+    ]).then(([s, posts]) => {
+      setStats(s)
+      setRecentPosts(Array.isArray(posts) ? posts : [])
+    }).finally(() => setLoading(false))
   }, [])
 
   return (
@@ -53,7 +48,7 @@ export default function DashboardPage() {
         <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>
           ダッシュボード
         </h1>
-        <p className="mt-0.5 text-sm text-gray-500">Threads自動投稿の管理センター</p>
+        <p className="mt-0.5 text-sm text-gray-500">SNS自動投稿の管理センター（Threads / TikTok）</p>
       </div>
 
       {/* KPI cards */}
@@ -69,7 +64,7 @@ export default function DashboardPage() {
           >
             <p className="mb-1 text-xs text-gray-500">{label}</p>
             <p className={`text-3xl font-bold tabular-nums ${color}`}>
-              {stats[key]}
+              {loading ? '—' : stats[key]}
             </p>
           </div>
         ))}
@@ -95,7 +90,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
           <h2 className="text-sm font-semibold" style={{ color: '#061b31' }}>直近の投稿</h2>
           <Link
-            href="/dashboard/schedule"
+            href="/dashboard/logs"
             className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:underline"
           >
             すべて見る <ArrowRight className="h-3 w-3" />

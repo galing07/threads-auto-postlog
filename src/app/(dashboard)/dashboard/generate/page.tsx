@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft, CheckCircle, Lightbulb, Wand2 } from 'lucide-react'
+import { Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft, CheckCircle, Lightbulb, Wand2, BookOpen, ChevronDown, ChevronUp, X, Upload, Video, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { cx } from '@/lib/utils'
-import type { Account, Post } from '@/types/database'
+import type { Account, Post, ReferenceAccount } from '@/types/database'
 
 type Step = 'input' | 'preview' | 'done'
 type PostType = 'buzz' | 'empathy' | 'numbers' | 'story' | 'question'
@@ -42,19 +42,35 @@ export default function GeneratePage() {
   const [imageLoading, setImageLoading] = useState(false)
   const [imageEditPrompt, setImageEditPrompt] = useState('')
   const [imageEditing, setImageEditing] = useState(false)
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoLoading, setVideoLoading] = useState(false)
+  const [videoStage, setVideoStage] = useState<'idle' | 'generating' | 'polling' | 'uploading'>('idle')
   const [scheduledAt, setScheduledAt] = useState('')
   const [savedPost, setSavedPost] = useState<Post | null>(null)
 
+  // 参考投稿
+  const [referenceAccounts, setReferenceAccounts] = useState<ReferenceAccount[]>([])
+  const [showReference, setShowReference] = useState(false)
+  const [selectedRefAccount, setSelectedRefAccount] = useState('')
+  const [referencePost, setReferencePost] = useState('')
+  const [referenceImage, setReferenceImage] = useState<{ base64: string; mimeType: string } | null>(null)
+
   useEffect(() => {
-    fetch('/api/accounts')
-      .then(r => r.json())
-      .then((data: Account[]) => {
-        setAccounts(data)
-        if (data.length > 0) setSelectedAccount(data[0].id)
-      })
+    Promise.all([
+      fetch('/api/accounts').then(r => r.json()) as Promise<Account[]>,
+      fetch('/api/reference-accounts').then(r => r.json()) as Promise<ReferenceAccount[]>,
+    ]).then(([accs, refs]) => {
+      setAccounts(accs)
+      if (accs.length > 0) setSelectedAccount(accs[0].id)
+      setReferenceAccounts(Array.isArray(refs) ? refs : [])
+    })
   }, [])
 
   const isDemoMode = !selectedAccount
+  const currentAccount = accounts.find(a => a.id === selectedAccount)
+  const isVideoMode = currentAccount?.platform === 'tiktok' && Boolean(currentAccount.heygen_avatar_id && currentAccount.heygen_voice_id)
+
+  const selectedRefName = referenceAccounts.find(r => r.id === selectedRefAccount)?.name
 
   async function handleSuggestThemes() {
     setSuggestLoading(true)
@@ -88,6 +104,8 @@ export default function GeneratePage() {
           accountId: selectedAccount || undefined,
           theme: targetTheme,
           postType: postType || undefined,
+          referencePost: referencePost.trim() || undefined,
+          referenceAccountName: selectedRefName || undefined,
         }),
       })
       const data = await res.json() as { content: string; summary: string; error?: string }
@@ -109,7 +127,12 @@ export default function GeneratePage() {
       const res = await fetch('/api/generate/image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postContent: generatedText, style: 'diagram' }),
+        body: JSON.stringify({
+          postContent: generatedText,
+          style: 'diagram',
+          referenceImageBase64: referenceImage?.base64,
+          referenceImageMimeType: referenceImage?.mimeType,
+        }),
       })
       const data = await res.json() as { imageUrl: string; error?: string }
       if (data.error) throw new Error(data.error)
@@ -119,6 +142,52 @@ export default function GeneratePage() {
     } finally {
       setImageLoading(false)
     }
+  }
+
+  async function handleGenerateVideo() {
+    if (!generatedText || !currentAccount) return
+    setVideoLoading(true)
+    setVideoStage('generating')
+    try {
+      // HeyGen動画生成は1〜3分かかる
+      setVideoStage('polling')
+      const res = await fetch('/api/generate/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: generatedText,
+          accountId: currentAccount.id,
+          caption: true,
+        }),
+      })
+      const data = await res.json() as { videoUrl?: string; error?: string }
+      if (!res.ok || !data.videoUrl) throw new Error(data.error ?? '動画生成に失敗しました')
+      setVideoUrl(data.videoUrl)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '動画生成に失敗しました')
+    } finally {
+      setVideoLoading(false)
+      setVideoStage('idle')
+    }
+  }
+
+  function handleReferenceImageUpload(file: File) {
+    const MAX_SIZE = 5 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      alert('画像サイズは5MB以下にしてください')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      alert('画像ファイルを選択してください')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const base64 = result.replace(/^data:image\/[^;]+;base64,/, '')
+      setReferenceImage({ base64, mimeType: file.type })
+    }
+    reader.readAsDataURL(file)
   }
 
   async function handleEditImage() {
@@ -151,6 +220,7 @@ export default function GeneratePage() {
           accountId: selectedAccount || undefined,
           textContent: generatedText,
           imageUrl: imageUrl || undefined,
+          videoUrl: videoUrl || undefined,
           theme,
           scheduledAt: scheduledAt || undefined,
           summary: generatedSummary || undefined,
@@ -181,6 +251,12 @@ export default function GeneratePage() {
     setScheduledAt('')
     setSavedPost(null)
     setThemeSuggestions([])
+    setReferencePost('')
+    setSelectedRefAccount('')
+    setShowReference(false)
+    setReferenceImage(null)
+    setVideoUrl('')
+    setVideoStage('idle')
   }
 
   if (step === 'done') {
@@ -273,9 +349,9 @@ export default function GeneratePage() {
               {/* テーマ候補チップ */}
               {themeSuggestions.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
-                  {themeSuggestions.map((t, i) => (
+                  {themeSuggestions.map(t => (
                     <button
-                      key={i}
+                      key={t}
                       onClick={() => {
                         setTheme(t)
                         setThemeSuggestions([])
@@ -335,6 +411,123 @@ export default function GeneratePage() {
             </div>
           </div>
 
+          {/* 参考投稿（折りたたみ） */}
+          <div className="rounded-lg border border-[#e5edf5] bg-white">
+            <button
+              type="button"
+              onClick={() => setShowReference(v => !v)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left"
+            >
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-[#00A3BF]" />
+                <span className="text-sm font-medium text-gray-700">参考投稿を使う</span>
+                {(referencePost.trim() || referenceImage) && (
+                  <span className="rounded-full bg-[#E9F7F9] px-2 py-0.5 text-[10px] font-medium text-[#006F83]">
+                    設定済み
+                  </span>
+                )}
+              </div>
+              {showReference
+                ? <ChevronUp className="h-4 w-4 text-gray-400" />
+                : <ChevronDown className="h-4 w-4 text-gray-400" />
+              }
+            </button>
+
+            {showReference && (
+              <div className="border-t border-[#e5edf5] px-4 pb-4 pt-3 space-y-3">
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  参考にしたい投稿をペーストしてください。AIがテーマ・構成を読み取り、自分のスタイルで書き直します。
+                </p>
+
+                {/* 参考アカウント選択 */}
+                {referenceAccounts.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-gray-500">参考アカウント（任意）</p>
+                    <select
+                      value={selectedRefAccount}
+                      onChange={e => setSelectedRefAccount(e.target.value)}
+                      className="w-full appearance-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
+                    >
+                      <option value="">選択しない</option>
+                      {referenceAccounts.map(r => (
+                        <option key={r.id} value={r.id}>{r.name}{r.handle ? ` (@${r.handle})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* 投稿テキスト貼り付け */}
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-xs font-medium text-gray-500">参考投稿テキスト</p>
+                    {referencePost && (
+                      <button
+                        onClick={() => setReferencePost('')}
+                        className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <X className="h-3 w-3" />クリア
+                      </button>
+                    )}
+                  </div>
+                  <Textarea
+                    value={referencePost}
+                    onChange={e => setReferencePost(e.target.value)}
+                    rows={5}
+                    placeholder="参考にしたい投稿をここにペーストしてください..."
+                    className="resize-none text-sm"
+                  />
+                  {referencePost.trim() && (
+                    <p className="mt-1 text-[11px] text-[#006F83]">
+                      ✓ この投稿を参考にして生成します（元の文章はそのまま使いません）
+                    </p>
+                  )}
+                </div>
+
+                {/* 参考画像アップロード */}
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-xs font-medium text-gray-500">参考画像（任意）</p>
+                    {referenceImage && (
+                      <button
+                        onClick={() => setReferenceImage(null)}
+                        className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <X className="h-3 w-3" />クリア
+                      </button>
+                    )}
+                  </div>
+                  {referenceImage ? (
+                    <div className="rounded-md border border-[#e5edf5] bg-white p-2">
+                      <img
+                        src={`data:${referenceImage.mimeType};base64,${referenceImage.base64}`}
+                        alt="参考画像"
+                        className="max-h-40 w-auto rounded object-contain"
+                      />
+                      <p className="mt-1 text-[11px] text-[#006F83]">
+                        ✓ レイアウト・配色・スタイルを参考にして画像を生成します
+                      </p>
+                    </div>
+                  ) : (
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5] bg-white px-3 py-3 text-sm text-gray-500 transition hover:border-[#00A3BF] hover:bg-[#F8FAFC]">
+                      <Upload className="h-4 w-4" />
+                      <span>画像をアップロード（最大5MB）</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) handleReferenceImageUpload(file)
+                          e.target.value = ''
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <Button
             onClick={() => handleGenerate()}
             disabled={!theme.trim()}
@@ -367,6 +560,11 @@ export default function GeneratePage() {
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">テーマ</span>
             <span className="text-gray-700">{theme}</span>
+            {(referencePost.trim() || referenceImage) && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">
+                参考{referencePost.trim() && referenceImage ? '投稿+画像' : referenceImage ? '画像' : '投稿'}あり
+              </span>
+            )}
             <button
               onClick={() => setStep('input')}
               className="ml-auto text-xs text-[#006F83] hover:underline"
@@ -403,49 +601,98 @@ export default function GeneratePage() {
             </div>
           </Card>
 
-          {/* 図解画像 */}
-          <Card className="space-y-3">
-            <div className="flex items-center justify-between">
-              <SectionLabel>図解画像</SectionLabel>
-              <button
-                onClick={handleGenerateImage}
-                disabled={imageLoading}
-                className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] disabled:opacity-50"
-              >
-                <ImageIcon className="h-3 w-3" />
-                {imageLoading ? '生成中...' : imageUrl ? '再生成' : '図解を生成'}
-              </button>
-            </div>
-            {imageUrl ? (
-              <>
-                <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
-                {/* 修正プロンプト */}
-                <div className="mt-2 flex gap-2">
-                  <input
-                    value={imageEditPrompt}
-                    onChange={e => setImageEditPrompt(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleEditImage()}
-                    placeholder="修正指示を入力（例：背景を青に、テキストを日本語に）"
-                    disabled={imageEditing}
-                    className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden placeholder-gray-400 transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20 disabled:opacity-50"
-                  />
-                  <button
-                    onClick={handleEditImage}
-                    disabled={!imageEditPrompt.trim() || imageEditing}
-                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-[#00A3BF] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#008CA8] disabled:opacity-40"
-                  >
-                    <Wand2 className={cx('h-3.5 w-3.5', imageEditing && 'animate-pulse')} />
-                    {imageEditing ? '修正中...' : '修正'}
-                  </button>
+          {/* メディア生成: TikTokは動画, それ以外は画像 */}
+          {isVideoMode ? (
+            <Card className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <SectionLabel>アバター動画</SectionLabel>
+                  <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-medium text-purple-600">
+                    HeyGen + 字幕
+                  </span>
                 </div>
-              </>
-            ) : (
-              <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
-                <ImageIcon className="h-5 w-5 text-gray-300" />
-                <span className="text-xs text-gray-400">「図解を生成」ボタンで追加（任意）</span>
+                <button
+                  onClick={handleGenerateVideo}
+                  disabled={videoLoading}
+                  className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] disabled:opacity-50"
+                >
+                  {videoLoading
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <Video className="h-3 w-3" />}
+                  {videoLoading
+                    ? (videoStage === 'polling' ? '動画レンダリング中...' : '生成中...')
+                    : videoUrl ? '再生成' : '動画を生成'}
+                </button>
               </div>
-            )}
-          </Card>
+              {videoUrl ? (
+                <video src={videoUrl} controls className="w-full rounded-md bg-black" />
+              ) : videoLoading ? (
+                <div className="flex h-44 flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-purple-200 bg-purple-50/30">
+                  <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-gray-700">動画を生成中...</p>
+                    <p className="mt-0.5 text-[10px] text-gray-400">
+                      HeyGenで1〜3分かかります。このタブを閉じないでください
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
+                  <Video className="h-5 w-5 text-gray-300" />
+                  <span className="text-xs text-gray-400">「動画を生成」ボタンでアバター動画を作成</span>
+                </div>
+              )}
+            </Card>
+          ) : (
+            <Card className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <SectionLabel>図解画像</SectionLabel>
+                  {referenceImage && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">
+                      参考画像でテイスト適用
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={handleGenerateImage}
+                  disabled={imageLoading}
+                  className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] disabled:opacity-50"
+                >
+                  <ImageIcon className="h-3 w-3" />
+                  {imageLoading ? '生成中...' : imageUrl ? '再生成' : '図解を生成'}
+                </button>
+              </div>
+              {imageUrl ? (
+                <>
+                  <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={imageEditPrompt}
+                      onChange={e => setImageEditPrompt(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleEditImage()}
+                      placeholder="修正指示を入力（例：背景を青に、テキストを日本語に）"
+                      disabled={imageEditing}
+                      className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden placeholder-gray-400 transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20 disabled:opacity-50"
+                    />
+                    <button
+                      onClick={handleEditImage}
+                      disabled={!imageEditPrompt.trim() || imageEditing}
+                      className="flex shrink-0 items-center gap-1.5 rounded-md bg-[#00A3BF] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#008CA8] disabled:opacity-40"
+                    >
+                      <Wand2 className={cx('h-3.5 w-3.5', imageEditing && 'animate-pulse')} />
+                      {imageEditing ? '修正中...' : '修正'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
+                  <ImageIcon className="h-5 w-5 text-gray-300" />
+                  <span className="text-xs text-gray-400">「図解を生成」ボタンで追加（任意）</span>
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* 予約投稿（アカウントありのみ） */}
           {!isDemoMode && (

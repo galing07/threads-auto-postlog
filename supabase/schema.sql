@@ -15,6 +15,8 @@ CREATE TABLE accounts (
   access_token TEXT,
   token_expires_at TIMESTAMPTZ,
   threads_user_id TEXT, -- ThreadsのユーザーID
+  threads_client_id TEXT, -- Meta App Client ID（アカウント単位で保管）
+  threads_client_secret TEXT, -- Meta App Client Secret（同上 / RLS で保護）
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -23,11 +25,13 @@ CREATE TABLE accounts (
 -- 投稿管理
 CREATE TABLE posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  account_id UUID REFERENCES accounts(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE, -- アカウントなしのデモ生成も追跡
+  account_id UUID REFERENCES accounts(id) ON DELETE CASCADE, -- nullable: 下書き保存のみのケース
   text_content TEXT,
   image_url TEXT,
   image_prompt TEXT,
   theme TEXT, -- 投稿テーマ
+  summary TEXT, -- 過去投稿との重複回避に使う要約（30〜50字）
   status TEXT DEFAULT 'draft', -- 'draft' | 'scheduled' | 'posted' | 'failed'
   scheduled_at TIMESTAMPTZ,
   posted_at TIMESTAMPTZ,
@@ -35,6 +39,17 @@ CREATE TABLE posts (
   error_message TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 参考アカウント（投稿生成時のネタ元として使うブックマーク）
+CREATE TABLE reference_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  platform TEXT NOT NULL DEFAULT 'threads',
+  handle TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 投稿テーマ・ネタ管理
@@ -65,19 +80,24 @@ ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_themes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reference_accounts ENABLE ROW LEVEL SECURITY;
+
+-- reference_accounts: 自分のものだけ
+CREATE POLICY "reference_accounts: own data only"
+  ON reference_accounts FOR ALL
+  USING (auth.uid() = user_id);
 
 -- accounts: 自分のアカウントのみアクセス可
 CREATE POLICY "accounts: own data only"
   ON accounts FOR ALL
   USING (auth.uid() = user_id);
 
--- posts: 自分のアカウントの投稿のみ
-CREATE POLICY "posts: own accounts only"
+-- posts: 自分のアカウントの投稿、または account_id=NULL のデモ投稿で user_id が自分のもの
+CREATE POLICY "posts: own data only"
   ON posts FOR ALL
   USING (
-    account_id IN (
-      SELECT id FROM accounts WHERE user_id = auth.uid()
-    )
+    user_id = auth.uid()
+    OR account_id IN (SELECT id FROM accounts WHERE user_id = auth.uid())
   );
 
 -- post_themes: 自分のアカウントのテーマのみ

@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'AutoPost — Threads自動投稿',
-  description: 'Threads自動投稿管理システム',
+  title: 'AutoPost — SNS自動投稿',
+  description: 'SNS自動投稿管理システム（Threads / TikTok対応）',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

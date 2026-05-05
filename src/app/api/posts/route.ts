@@ -11,11 +11,14 @@ export async function GET(req: NextRequest) {
     const accountId = searchParams.get('accountId')
     const status = searchParams.get('status')
 
+    const limitParam = searchParams.get('limit')
+    const limit = limitParam ? parseInt(limitParam, 10) : 200
+
     let query = supabase
       .from('posts')
       .select('*, account:accounts(id, name, platform, persona)')
       .order('created_at', { ascending: false })
-      .limit(50)
+      .limit(limit)
 
     if (accountId) query = query.eq('account_id', accountId)
     if (status) query = query.eq('status', status)
@@ -41,6 +44,7 @@ export async function POST(req: NextRequest) {
       textContent: string
       imageUrl?: string
       imagePrompt?: string
+      videoUrl?: string
       theme?: string
       scheduledAt?: string
       summary?: string
@@ -54,6 +58,7 @@ export async function POST(req: NextRequest) {
         text_content: body.textContent,
         image_url: body.imageUrl ?? null,
         image_prompt: body.imagePrompt ?? null,
+        video_url: body.videoUrl ?? null,
         theme: body.theme ?? null,
         scheduled_at: body.scheduledAt ?? null,
         status: body.scheduledAt ? 'scheduled' : 'draft',

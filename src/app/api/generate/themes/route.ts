@@ -31,17 +31,35 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured')
 
+    // 既存投稿のテーマ一覧を取得（重複回避用）
+    const { data: existingPosts } = await supabase
+      .from('posts')
+      .select('theme, text_content')
+      .eq('user_id', user.id)
+      .not('theme', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    const usedThemes = (existingPosts ?? [])
+      .map(p => p.theme)
+      .filter((t): t is string => Boolean(t))
+
     const topics = account.post_topics?.join('、') ?? '転職、キャリア'
     const audience = account.target_audience ?? '20代社会人'
     const persona = account.persona ?? '転職アドバイザー'
 
-    const prompt = `${persona}として、${audience}向けのThreads投稿テーマを6個考えてください。
-テーマ一覧：${topics}
+    const avoidSection = usedThemes.length > 0
+      ? `\n\n【すでに投稿済み・使用済みのテーマ（これらと被らないこと）】\n${usedThemes.map(t => `- ${t}`).join('\n')}`
+      : ''
+
+    const prompt = `${persona}として、${audience}向けのThreads投稿テーマを15個考えてください。
+テーマ一覧：${topics}${avoidSection}
 
 条件：
 - 具体的で検索・共感されやすいタイトル
 - バズ型・共感型・数字型・体験談型・問いかけ型をバランスよく混ぜる
 - 各テーマは20〜40文字程度
+- すでに投稿済みのテーマと内容・切り口が被らないこと
 - 必ずJSON配列で返す
 
 返答形式（他の文章は不要）：
@@ -53,11 +71,11 @@ export async function POST(req: NextRequest) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? '',
-        'X-Title': 'Threads Auto Post',
+        'X-Title': 'SNS Auto Post',
       },
       body: JSON.stringify({
         model: 'google/gemini-2.0-flash-001',
-        max_tokens: 300,
+        max_tokens: 600,
         messages: [{ role: 'user', content: prompt }],
       }),
     })

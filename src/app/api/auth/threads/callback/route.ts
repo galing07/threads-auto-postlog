@@ -26,6 +26,8 @@ export async function GET(req: NextRequest) {
     postTopics: string
     state: string
     userId: string
+    clientId: string
+    clientSecret: string
   }
   try {
     pending = JSON.parse(pendingCookie)
@@ -37,26 +39,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=invalid_state`)
   }
 
-  // cookieのuserIdでMeta App設定を取得（サービスロールを使わずRLSを迂回するため管理者クライアント相当の処理）
   const supabase = await createServerSupabaseClient()
-
-  // 認証済みセッションを確認
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.id !== pending.userId) {
     return NextResponse.redirect(`${appUrl}/login`)
   }
 
-  const { data: metaApp } = await supabase
-    .from('user_meta_apps')
-    .select('threads_client_id, threads_client_secret')
-    .eq('user_id', pending.userId)
-    .single()
-
-  if (!metaApp) {
-    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=meta_not_configured`)
-  }
-
-  const { threads_client_id: clientId, threads_client_secret: clientSecret } = metaApp
+  const { clientId, clientSecret } = pending
   const redirectUri = `${appUrl}/api/auth/threads/callback`
 
   try {
@@ -78,18 +67,26 @@ export async function GET(req: NextRequest) {
       error_message?: string
     }
 
-    if (!tokenData.access_token) {
-      console.error('Token exchange failed:', tokenData)
+    if (!tokenData.access_token || !tokenData.user_id) {
+      // 機密の漏洩を避けるため詳細はログに出さない
+      console.error('Token exchange failed:', { hasAccessToken: !!tokenData.access_token, hasUserId: !!tokenData.user_id })
       return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=token_failed`)
     }
 
     const shortToken = tokenData.access_token
-    const threadsUserId = String(tokenData.user_id!)
+    const threadsUserId = String(tokenData.user_id)
 
     // Step 2: 短期 → 長期トークン（60日有効）
-    const longTokenRes = await fetch(
-      `https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${clientSecret}&access_token=${shortToken}`
-    )
+    // client_secret はクエリではなく POST body に入れる（URL 経由の漏洩防止）
+    const longTokenRes = await fetch('https://graph.threads.net/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'th_exchange_token',
+        client_secret: clientSecret,
+        access_token: shortToken,
+      }),
+    })
     const longTokenData = await longTokenRes.json() as {
       access_token?: string
       expires_in?: number
@@ -112,10 +109,12 @@ export async function GET(req: NextRequest) {
         post_topics: postTopics,
         access_token: accessToken,
         threads_user_id: threadsUserId,
+        threads_client_id: clientId,
+        threads_client_secret: clientSecret,
       })
 
     if (dbError) {
-      console.error('DB insert failed:', dbError)
+      console.error('DB insert failed:', { code: dbError.code, message: dbError.message })
       return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=db_failed`)
     }
 
@@ -124,7 +123,8 @@ export async function GET(req: NextRequest) {
     return res
 
   } catch (e) {
-    console.error('OAuth callback error:', e)
+    const message = e instanceof Error ? e.message : 'unknown'
+    console.error('OAuth callback error:', message)
     return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=unknown`)
   }
 }

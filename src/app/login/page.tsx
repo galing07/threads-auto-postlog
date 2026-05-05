@@ -40,7 +40,7 @@ export default function LoginPage() {
         </div>
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900">AutoPost</h1>
-          <p className="text-sm text-gray-500">Threads 自動投稿</p>
+          <p className="text-sm text-gray-500">SNS 自動投稿</p>
         </div>
       </div>
 

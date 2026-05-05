@@ -16,6 +16,10 @@ const DEMO_ACCOUNT: Account = {
   access_token: null,
   token_expires_at: null,
   threads_user_id: null,
+  threads_client_id: null,
+  threads_client_secret: null,
+  heygen_avatar_id: null,
+  heygen_voice_id: null,
   is_active: false,
   created_at: '',
   updated_at: '',
@@ -27,10 +31,12 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const { accountId, theme, postType } = await req.json() as {
+    const { accountId, theme, postType, referencePost, referenceAccountName } = await req.json() as {
       accountId?: string
       theme: string
       postType?: string
+      referencePost?: string
+      referenceAccountName?: string
     }
     if (!theme) {
       return NextResponse.json({ error: 'theme は必須です' }, { status: 400 })
@@ -67,7 +73,7 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
     }
 
-    const result = await generateThreadsText({ account, theme, postType, recentSummaries })
+    const result = await generateThreadsText({ account, theme, postType, recentSummaries, referencePost, referenceAccountName })
     return NextResponse.json(result)
   } catch (e) {
     const message = e instanceof Error ? e.message : '生成に失敗しました'

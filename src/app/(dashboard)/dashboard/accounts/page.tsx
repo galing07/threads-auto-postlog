@@ -2,13 +2,13 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, User, X, CheckCircle, AlertCircle, KeyRound, Eye, EyeOff, Save } from 'lucide-react'
+import { Plus, User, X, CheckCircle, AlertCircle, Eye, EyeOff, BookOpen, Video, Sparkles } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { SelectNative } from '@/components/ui/Select'
 import { cx } from '@/lib/utils'
-import type { Account } from '@/types/database'
+import type { Account, ReferenceAccount } from '@/types/database'
 
 const PERSONAS = [
   { value: '転職ノウハウ発信者', label: '転職ノウハウ系' },
@@ -23,13 +23,12 @@ const TONES = [
 ]
 
 const ERROR_MESSAGES: Record<string, string> = {
-  cancelled:            '連携がキャンセルされました',
-  session_expired:      'セッションが期限切れです。もう一度お試しください',
-  invalid_state:        '不正なリクエストです。もう一度お試しください',
-  token_failed:         'トークンの取得に失敗しました',
-  db_failed:            'アカウントの保存に失敗しました',
-  meta_not_configured:  'Meta App設定が必要です。下の「Meta App設定」を先に保存してください',
-  unknown:              '予期しないエラーが発生しました',
+  cancelled:        '連携がキャンセルされました',
+  session_expired:  'セッションが期限切れです。もう一度お試しください',
+  invalid_state:    '不正なリクエストです。もう一度お試しください',
+  token_failed:     'トークンの取得に失敗しました',
+  db_failed:        'アカウントの保存に失敗しました',
+  unknown:          '予期しないエラーが発生しました',
 }
 
 function FieldLabel({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
@@ -74,172 +73,232 @@ function OAuthToast() {
 }
 
 // ────────────────────────────────────────────
-// Meta App 設定カード
+// 参考アカウント管理
 // ────────────────────────────────────────────
-function MetaAppSettings() {
-  const [clientId, setClientId] = useState('')
-  const [clientSecret, setClientSecret] = useState('')
-  const [secretMask, setSecretMask] = useState('')
-  const [showSecret, setShowSecret] = useState(false)
-  const [configured, setConfigured] = useState(false)
+function ReferenceAccountsSection() {
+  const [refs, setRefs] = useState<ReferenceAccount[]>([])
+  const [showAdd, setShowAdd] = useState(false)
+  const [name, setName] = useState('')
+  const [handle, setHandle] = useState('')
   const [saving, setSaving] = useState(false)
-  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
-    fetch('/api/settings/meta')
-      .then(r => r.json())
-      .then((d: { configured?: boolean; clientId?: string; clientSecretMask?: string }) => {
-        if (d.configured) {
-          setConfigured(true)
-          setClientId(d.clientId ?? '')
-          setSecretMask(d.clientSecretMask ?? '')
-        }
-      })
+    fetch('/api/reference-accounts').then(r => r.json()).then((d: ReferenceAccount[]) => {
+      setRefs(Array.isArray(d) ? d : [])
+    })
   }, [])
 
-  async function handleSave() {
-    if (!clientId.trim()) { setSaveMsg({ ok: false, text: 'クライアントIDを入力してください' }); return }
-    if (!clientSecret.trim() && !configured) { setSaveMsg({ ok: false, text: 'クライアントシークレットを入力してください' }); return }
+  async function handleAdd() {
+    if (!name.trim()) return
     setSaving(true)
-    setSaveMsg(null)
-
-    const body: Record<string, string> = { clientId }
-    // シークレットが未変更（空欄のまま）なら送らない
-    if (clientSecret.trim()) body.clientSecret = clientSecret.trim()
-
-    // シークレットを送らない場合は既存値を保持するためAPIに通知
-    if (!body.clientSecret && configured) {
-      // 変更なし
-      setSaving(false)
-      setSaveMsg({ ok: true, text: 'Client IDを更新しました' })
-      return
-    }
-
-    const res = await fetch('/api/settings/meta', {
-      method: 'PUT',
+    const res = await fetch('/api/reference-accounts', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ name: name.trim(), handle: handle.trim() || undefined }),
     })
-    const data = await res.json() as { ok?: boolean; error?: string }
+    const data = await res.json() as ReferenceAccount & { error?: string }
     setSaving(false)
-    if (data.ok) {
-      setConfigured(true)
-      setClientSecret('')
-      setSaveMsg({ ok: true, text: '保存しました' })
-      // マスクを再取得
-      fetch('/api/settings/meta').then(r => r.json()).then((d: { clientSecretMask?: string }) => {
-        if (d.clientSecretMask) setSecretMask(d.clientSecretMask)
-      })
-    } else {
-      setSaveMsg({ ok: false, text: data.error ?? '保存に失敗しました' })
+    if (!data.error) {
+      setRefs(prev => [data, ...prev])
+      setName('')
+      setHandle('')
+      setShowAdd(false)
     }
   }
 
+  async function handleDelete(id: string) {
+    const res = await fetch(`/api/reference-accounts/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      alert('削除に失敗しました')
+      return
+    }
+    setRefs(prev => prev.filter(r => r.id !== id))
+  }
+
   return (
-    <Card className="mb-6 p-5">
-      <div className="mb-4 flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E9F7F9]">
-          <KeyRound className="h-4 w-4 text-[#00A3BF]" />
+    <div className="mb-6">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-4 w-4 text-[#00A3BF]" />
+          <p className="text-sm font-semibold" style={{ color: '#061b31' }}>参考アカウント</p>
+          <span className="text-xs text-gray-400">生成時に投稿をペーストしてネタ元として使えます</span>
         </div>
-        <div>
-          <p className="text-sm font-semibold" style={{ color: '#061b31' }}>Meta App 設定</p>
-          <p className="text-xs text-gray-400">Threadsアカウントの連携に使用するMeta Appの認証情報</p>
-        </div>
-        {configured && (
-          <span className="ml-auto rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
-            設定済み
-          </span>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        <div>
-          <FieldLabel>Client ID</FieldLabel>
-          <Input
-            value={clientId}
-            onChange={e => setClientId(e.target.value)}
-            placeholder="例：1234567890123456"
-          />
-        </div>
-        <div>
-          <FieldLabel>{configured ? 'Client Secret（変更する場合のみ入力）' : 'Client Secret'}</FieldLabel>
-          <div className="relative">
-            <Input
-              type={showSecret ? 'text' : 'password'}
-              value={clientSecret}
-              onChange={e => setClientSecret(e.target.value)}
-              placeholder={configured ? secretMask : '例：abcdef1234567890abcdef1234567890'}
-              className="pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => setShowSecret(v => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between pt-1">
-          {saveMsg && (
-            <p className={cx('text-xs', saveMsg.ok ? 'text-green-600' : 'text-red-500')}>
-              {saveMsg.ok ? <span className="flex items-center gap-1"><CheckCircle className="h-3 w-3" />{saveMsg.text}</span> : saveMsg.text}
-            </p>
-          )}
-          <div className="ml-auto">
-            <Button onClick={handleSave} disabled={saving} className="gap-1.5">
-              <Save className="h-3.5 w-3.5" />
-              {saving ? '保存中…' : '保存'}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-[11px] leading-relaxed text-gray-500">
-        <a
-          href="https://developers.facebook.com/apps"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[#00A3BF] underline underline-offset-2"
+        <button
+          onClick={() => setShowAdd(v => !v)}
+          className="flex items-center gap-1 text-xs font-medium text-[#006F83] hover:text-[#005A6B] transition-colors"
         >
-          Meta for Developers
-        </a>{' '}
-        でアプリを作成し、Threads APIを有効化してClient IDとSecretを取得してください。
-        各ユーザーが自分のアプリ情報を登録するため、他のユーザーの連携には影響しません。
-      </p>
-    </Card>
+          <Plus className="h-3.5 w-3.5" />
+          追加
+        </button>
+      </div>
+
+      {showAdd && (
+        <Card className="mb-3 p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="mb-1 text-xs font-medium text-gray-500">アカウント名 *</p>
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder="例：転職太郎" />
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-medium text-gray-500">ハンドル（任意）</p>
+              <Input value={handle} onChange={e => setHandle(e.target.value)} placeholder="例：tenshoku_taro" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowAdd(false)} className="text-xs py-1.5">キャンセル</Button>
+            <Button onClick={handleAdd} disabled={!name.trim() || saving} isLoading={saving} loadingText="保存中..." className="text-xs py-1.5">保存</Button>
+          </div>
+        </Card>
+      )}
+
+      {refs.length === 0 && !showAdd ? (
+        <p className="text-xs text-gray-400 py-2">まだ登録されていません</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {refs.map(r => (
+            <div key={r.id} className="flex items-center gap-1.5 rounded-full border border-[#e5edf5] bg-white px-3 py-1.5 text-xs text-gray-700">
+              <BookOpen className="h-3 w-3 text-gray-400" />
+              <span>{r.name}</span>
+              {r.handle && <span className="text-gray-400">@{r.handle}</span>}
+              <button onClick={() => handleDelete(r.id)} className="ml-1 text-gray-300 hover:text-red-400 transition-colors">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
-// ────────────────────────────────────────────
-// メインページ
-// ────────────────────────────────────────────
+type Platform = 'threads' | 'tiktok'
+
+interface VoiceOption {
+  voice_id: string
+  name: string
+  gender: string
+  language: string
+  preview_audio?: string
+}
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [platform, setPlatform] = useState<Platform>('threads')
+  const [showSecret, setShowSecret] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+  const [formError, setFormError] = useState('')
   const [form, setForm] = useState({
     name: '',
     persona: PERSONAS[0].value,
     tone: 'friendly',
     targetAudience: 'キャリアに不安のある高卒20代',
     postTopics: '転職ノウハウ、キャリア相談、仕事の悩み',
+    clientId: '',
+    clientSecret: '',
+    heygenAvatarId: '',
+    heygenVoiceId: '',
   })
+  const [voices, setVoices] = useState<VoiceOption[]>([])
+  const [voicesLoading, setVoicesLoading] = useState(false)
+  const [previewingVoice, setPreviewingVoice] = useState<string>('')
 
   useEffect(() => {
-    fetch('/api/accounts').then(r => r.json()).then(setAccounts)
+    fetch('/api/accounts').then(r => r.json()).then(setAccounts).catch(() => {})
   }, [])
 
-  function handleConnect() {
-    if (!form.name.trim()) { alert('アカウント名を入力してください'); return }
-    const params = new URLSearchParams({
-      name: form.name,
-      persona: form.persona,
-      tone: form.tone,
-      targetAudience: form.targetAudience,
-      postTopics: form.postTopics,
-    })
-    window.location.href = `/api/auth/threads/connect?${params}`
+  // TikTokタブを開いたら音声一覧をロード
+  useEffect(() => {
+    if (platform !== 'tiktok' || voices.length > 0) return
+    setVoicesLoading(true)
+    fetch('/api/heygen/voices?language=Japanese')
+      .then(r => r.json())
+      .then((d: { voices?: VoiceOption[] }) => {
+        setVoices(Array.isArray(d.voices) ? d.voices : [])
+      })
+      .catch(() => {})
+      .finally(() => setVoicesLoading(false))
+  }, [platform, voices.length])
+
+  function handlePreviewVoice(voiceId: string, audioUrl?: string) {
+    if (!audioUrl) return
+    setPreviewingVoice(voiceId)
+    const audio = new Audio(audioUrl)
+    audio.onended = () => setPreviewingVoice('')
+    audio.onerror = () => setPreviewingVoice('')
+    audio.play().catch(() => setPreviewingVoice(''))
+  }
+
+  async function handleCreateTikTok() {
+    setFormError('')
+    if (!form.name.trim()) { setFormError('アカウント名を入力してください'); return }
+    if (!form.heygenAvatarId.trim()) { setFormError('HeyGen Avatar IDを入力してください'); return }
+    if (!form.heygenVoiceId.trim()) { setFormError('HeyGen Voiceを選択してください'); return }
+
+    setConnecting(true)
+    try {
+      const res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: 'tiktok',
+          name: form.name,
+          persona: form.persona,
+          tone: form.tone,
+          targetAudience: form.targetAudience,
+          postTopics: form.postTopics,
+          heygenAvatarId: form.heygenAvatarId.trim(),
+          heygenVoiceId: form.heygenVoiceId.trim(),
+        }),
+      })
+      const data = await res.json() as Account & { error?: string }
+      if (!res.ok || data.error) {
+        setFormError(data.error ?? 'アカウントの作成に失敗しました')
+        return
+      }
+      setAccounts(prev => [data, ...prev])
+      setShowForm(false)
+      // フォームリセット
+      setForm(f => ({ ...f, name: '', heygenAvatarId: '', heygenVoiceId: '' }))
+    } catch {
+      setFormError('アカウントの作成に失敗しました')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  async function handleConnect() {
+    setFormError('')
+    if (!form.name.trim()) { setFormError('アカウント名を入力してください'); return }
+    if (!form.clientId.trim()) { setFormError('Client IDを入力してください'); return }
+    if (!form.clientSecret.trim()) { setFormError('Client Secretを入力してください'); return }
+
+    setConnecting(true)
+    try {
+      const res = await fetch('/api/auth/threads/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          persona: form.persona,
+          tone: form.tone,
+          targetAudience: form.targetAudience,
+          postTopics: form.postTopics,
+          clientId: form.clientId,
+          clientSecret: form.clientSecret,
+        }),
+      })
+      const data = await res.json() as { url?: string; error?: string }
+      if (!res.ok || !data.url) {
+        setFormError(data.error ?? '接続に失敗しました')
+        return
+      }
+      window.location.href = data.url
+    } catch {
+      setFormError('接続に失敗しました')
+    } finally {
+      setConnecting(false)
+    }
   }
 
   return (
@@ -263,8 +322,8 @@ export default function AccountsPage() {
         <OAuthToast />
       </Suspense>
 
-      {/* Meta App 設定 */}
-      <MetaAppSettings />
+      {/* 参考アカウント */}
+      <ReferenceAccountsSection />
 
       {/* Account list */}
       <div className="space-y-3">
@@ -281,11 +340,26 @@ export default function AccountsPage() {
             <Card key={account.id} className="p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E9F7F9]">
-                    <User className="h-4 w-4 text-[#00A3BF]" />
+                  <div className={cx(
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                    account.platform === 'tiktok' ? 'bg-purple-50' : 'bg-[#E9F7F9]',
+                  )}>
+                    {account.platform === 'tiktok'
+                      ? <Video className="h-4 w-4 text-purple-600" />
+                      : <User className="h-4 w-4 text-[#00A3BF]" />}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">{account.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-900">{account.name}</p>
+                      <span className={cx(
+                        'rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider',
+                        account.platform === 'tiktok'
+                          ? 'bg-purple-50 text-purple-700'
+                          : 'bg-[#E9F7F9] text-[#006F83]',
+                      )}>
+                        {account.platform}
+                      </span>
+                    </div>
                     <p className="text-xs text-gray-500">{account.persona}</p>
                   </div>
                 </div>
@@ -334,6 +408,25 @@ export default function AccountsPage() {
               </button>
             </div>
 
+            {/* Platform selector tabs */}
+            <div className="flex gap-1 border-b border-gray-100 bg-gray-50 px-6 py-2">
+              {(['threads', 'tiktok'] as const).map(p => (
+                <button
+                  key={p}
+                  onClick={() => { setPlatform(p); setFormError('') }}
+                  className={cx(
+                    'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+                    platform === p
+                      ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200'
+                      : 'text-gray-500 hover:text-gray-700',
+                  )}
+                >
+                  {p === 'threads' ? <Sparkles className="h-3.5 w-3.5" /> : <Video className="h-3.5 w-3.5" />}
+                  {p === 'threads' ? 'Threads（テキスト・画像）' : 'TikTok（アバター動画）'}
+                </button>
+              ))}
+            </div>
+
             <div className="max-h-[calc(90vh-120px)] overflow-y-auto p-6">
               <div className="space-y-4">
                 <div>
@@ -372,10 +465,121 @@ export default function AccountsPage() {
                   />
                 </div>
 
+                {/* Meta App credentials (Threads時のみ) */}
+                {platform === 'threads' && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Meta App 設定</p>
+                  <div>
+                    <FieldLabel>Client ID</FieldLabel>
+                    <Input
+                      value={form.clientId}
+                      onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
+                      placeholder="例：1234567890123456"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Client Secret</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        type={showSecret ? 'text' : 'password'}
+                        value={form.clientSecret}
+                        onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
+                        placeholder="例：abcdef1234567890abcdef1234567890"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret(v => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    <a
+                      href="https://developers.facebook.com/apps"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#00A3BF] underline underline-offset-2"
+                    >Meta for Developers</a>
+                    {' '}でアプリを作成し、Threads APIを有効化してください。
+                  </p>
+                </div>
+                )}
+
+                {/* HeyGen 設定 (TikTok時のみ) */}
+                {platform === 'tiktok' && (
+                  <div className="rounded-lg border border-purple-200 bg-purple-50/30 p-4 space-y-3">
+                    <p className="text-xs font-semibold text-purple-700 uppercase tracking-wider">HeyGen 設定</p>
+                    <div>
+                      <FieldLabel>HeyGen Avatar ID</FieldLabel>
+                      <Input
+                        value={form.heygenAvatarId}
+                        onChange={e => setForm(f => ({ ...f, heygenAvatarId: e.target.value }))}
+                        placeholder="例：c86d425d40be4a1eacd1749098bd085b"
+                      />
+                      <p className="mt-1 text-[10px] text-gray-400">
+                        HeyGen → Avatars → 作成したアバター → ID をコピー
+                      </p>
+                    </div>
+                    <div>
+                      <FieldLabel>音声（日本語）</FieldLabel>
+                      {voicesLoading ? (
+                        <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-400">
+                          音声一覧を読み込み中...
+                        </div>
+                      ) : voices.length === 0 ? (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                          ⚠️ 音声を取得できませんでした。HEYGEN_API_KEY が設定されているか確認してください
+                        </div>
+                      ) : (
+                        <>
+                          <SelectNative
+                            value={form.heygenVoiceId}
+                            onChange={e => setForm(f => ({ ...f, heygenVoiceId: e.target.value }))}
+                          >
+                            <option value="">— 選択してください —</option>
+                            {voices.map(v => (
+                              <option key={v.voice_id} value={v.voice_id}>
+                                {v.name}（{v.gender === 'male' ? '男性' : v.gender === 'female' ? '女性' : v.gender}）
+                              </option>
+                            ))}
+                          </SelectNative>
+                          {form.heygenVoiceId && (() => {
+                            const voice = voices.find(v => v.voice_id === form.heygenVoiceId)
+                            return voice?.preview_audio ? (
+                              <button
+                                type="button"
+                                onClick={() => handlePreviewVoice(voice.voice_id, voice.preview_audio)}
+                                disabled={previewingVoice === voice.voice_id}
+                                className="mt-1.5 text-[11px] text-purple-600 hover:text-purple-800 underline-offset-2 hover:underline disabled:opacity-50"
+                              >
+                                {previewingVoice === voice.voice_id ? '🔊 再生中...' : '▶ プレビュー再生'}
+                              </button>
+                            ) : null
+                          })()}
+                        </>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">
+                      動画は <strong>1080×1920（縦・TikTok向け）</strong> で生成され、字幕が自動で焼き込まれます。
+                    </p>
+                  </div>
+                )}
+
+                {formError && (
+                  <p className="flex items-center gap-1.5 text-xs text-red-500">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    {formError}
+                  </p>
+                )}
+
                 <div className="border-t border-gray-100 pt-2">
                   <p className="mb-3 text-xs text-gray-400">
-                    「Threadsで連携」を押すとMetaの認可画面に移動します。
-                    認可後、自動でアカウントが作成されます。
+                    {platform === 'threads'
+                      ? '「Threadsで連携」を押すとMetaの認可画面に移動します。認可後、自動でアカウントが作成されます。'
+                      : '「アカウントを作成」を押すとTikTok用アカウントが作成されます。動画は手動でTikTokアプリにアップロードします。'}
                   </p>
                 </div>
 
@@ -385,20 +589,37 @@ export default function AccountsPage() {
                     variant="secondary"
                     onClick={() => setShowForm(false)}
                     className="flex-1"
+                    disabled={connecting}
                   >
                     キャンセル
                   </Button>
-                  <Button
-                    type="button"
-                    onClick={handleConnect}
-                    disabled={!form.name.trim()}
-                    className="flex-1 gap-2"
-                  >
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748z"/>
-                    </svg>
-                    Threadsで連携
-                  </Button>
+                  {platform === 'threads' ? (
+                    <Button
+                      type="button"
+                      onClick={handleConnect}
+                      disabled={!form.name.trim() || connecting}
+                      isLoading={connecting}
+                      loadingText="接続中..."
+                      className="flex-1 gap-2"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748z"/>
+                      </svg>
+                      Threadsで連携
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={handleCreateTikTok}
+                      disabled={!form.name.trim() || connecting}
+                      isLoading={connecting}
+                      loadingText="作成中..."
+                      className="flex-1 gap-2"
+                    >
+                      <Video className="h-4 w-4" />
+                      アカウントを作成
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

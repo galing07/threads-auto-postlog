@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateDiagramImage } from '@/lib/ai/image'
+import { analyzeImageStructure } from '@/lib/ai/vision'
 
 /**
  * 投稿本文から画像生成プロンプトを構築する
@@ -56,21 +57,37 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const { prompt, postContent, style } = await req.json() as {
+    const { prompt, postContent, style, referenceImageBase64, referenceImageMimeType } = await req.json() as {
       prompt?: string
       postContent?: string
       style?: 'diagram' | 'infographic' | 'minimal'
+      referenceImageBase64?: string
+      referenceImageMimeType?: string
     }
 
-    const resolvedPrompt = prompt ?? (postContent ? buildImagePrompt(postContent) : null)
-    if (!resolvedPrompt) {
+    const basePrompt = prompt ?? (postContent ? buildImagePrompt(postContent) : null)
+    if (!basePrompt) {
       return NextResponse.json({ error: 'prompt か postContent が必要です' }, { status: 400 })
+    }
+
+    // 参考画像があれば vision 分析して構造をプロンプトに合成
+    let resolvedPrompt = basePrompt
+    if (referenceImageBase64) {
+      try {
+        const structure = await analyzeImageStructure(referenceImageBase64, referenceImageMimeType ?? 'image/png')
+        if (structure) {
+          resolvedPrompt = `${basePrompt}\n\nApply this visual design style as reference (do NOT copy text or specific subject matter, only the visual structure):\n${structure}`
+        }
+      } catch (e) {
+        // vision 失敗時は参考画像なしで続行
+        console.error('[generate/image] vision analysis failed:', e instanceof Error ? e.message : 'unknown')
+      }
     }
 
     const imageUrl = await generateDiagramImage({ prompt: resolvedPrompt, style })
     return NextResponse.json({ imageUrl })
   } catch (e) {
-    const message = e instanceof Error ? e.message : '画像生成に失敗しました'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[generate/image]', e instanceof Error ? e.message : 'unknown')
+    return NextResponse.json({ error: '画像生成に失敗しました' }, { status: 500 })
   }
 }
