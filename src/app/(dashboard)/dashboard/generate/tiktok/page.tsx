@@ -46,6 +46,8 @@ export default function TikTokGeneratePage() {
   const [videoUrl, setVideoUrl] = useState('')
   const [videoLoading, setVideoLoading] = useState(false)
   const [savedPost, setSavedPost] = useState<Post | null>(null)
+  const [manualAvatarId, setManualAvatarId] = useState('')
+  const [manualVoiceId, setManualVoiceId] = useState('')
 
   useEffect(() => {
     fetch('/api/accounts')
@@ -58,7 +60,9 @@ export default function TikTokGeneratePage() {
   }, [])
 
   const currentAccount = accounts.find(a => a.id === selectedAccount)
-  const hasHeyGen = Boolean(currentAccount?.heygen_avatar_id && currentAccount?.heygen_voice_id)
+  const effectiveAvatarId = currentAccount?.heygen_avatar_id ?? manualAvatarId
+  const effectiveVoiceId = currentAccount?.heygen_voice_id ?? manualVoiceId
+  const hasHeyGen = Boolean(effectiveAvatarId && effectiveVoiceId)
   const isDemoMode = !selectedAccount
 
   async function handleSuggestThemes() {
@@ -109,7 +113,7 @@ export default function TikTokGeneratePage() {
   }
 
   async function handleGenerateVideo() {
-    if (!generatedScript || !currentAccount) return
+    if (!generatedScript || !hasHeyGen) return
     setVideoLoading(true)
     try {
       const res = await fetch('/api/generate/video', {
@@ -117,7 +121,9 @@ export default function TikTokGeneratePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: generatedScript,
-          accountId: currentAccount.id,
+          accountId: currentAccount?.id,
+          avatarId: effectiveAvatarId || undefined,
+          voiceId: effectiveVoiceId || undefined,
           caption: true,
         }),
       })
@@ -165,6 +171,8 @@ export default function TikTokGeneratePage() {
     setVideoUrl('')
     setSavedPost(null)
     setThemeSuggestions([])
+    setManualAvatarId('')
+    setManualVoiceId('')
   }
 
   if (step === 'done') {
@@ -403,15 +411,33 @@ export default function TikTokGeneratePage() {
             </div>
 
             {!hasHeyGen ? (
-              <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
-                <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-amber-700">HeyGenが未設定です</p>
-                  <p className="mt-0.5 text-xs text-amber-600">
-                    アカウント設定でHeyGen アバターIDとボイスIDを登録すると、アバター動画を自動生成できます。
-                    スクリプトのみ下書き保存も可能です（アカウントなしでもOK）。
-                  </p>
+              <div className="space-y-3">
+                <p className="text-xs text-gray-500">HeyGen の Avatar ID と Voice ID を入力すると動画を生成できます</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Avatar ID</label>
+                    <input
+                      value={manualAvatarId}
+                      onChange={e => setManualAvatarId(e.target.value)}
+                      placeholder="avatar_..."
+                      className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Voice ID</label>
+                    <input
+                      value={manualVoiceId}
+                      onChange={e => setManualVoiceId(e.target.value)}
+                      placeholder="voice_..."
+                      className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+                    />
+                  </div>
                 </div>
+                {!manualAvatarId || !manualVoiceId ? (
+                  <p className="text-[11px] text-gray-400">
+                    HeyGen ダッシュボード → Avatars / Voices から ID をコピーして貼り付けてください
+                  </p>
+                ) : null}
               </div>
             ) : videoUrl ? (
               <video src={videoUrl} controls className="w-full rounded-md bg-black" />
