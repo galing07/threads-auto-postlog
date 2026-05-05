@@ -51,7 +51,7 @@ export async function POST(
       const text = post.text_content ?? ''
 
       // スレッドモード: "---" 区切りで複数ツイートに分割
-      const parts = text.split(/\n---\n/).map(s => s.trim()).filter(Boolean)
+      const parts = text.split(/\n---\n/).map((s: string) => s.trim()).filter(Boolean)
 
       if (parts.length > 1) {
         const results = await createXThread(account.access_token, parts)
