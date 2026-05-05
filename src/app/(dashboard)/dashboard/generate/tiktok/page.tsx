@@ -46,8 +46,12 @@ export default function TikTokGeneratePage() {
   const [videoUrl, setVideoUrl] = useState('')
   const [videoLoading, setVideoLoading] = useState(false)
   const [savedPost, setSavedPost] = useState<Post | null>(null)
-  const [manualAvatarId, setManualAvatarId] = useState('')
-  const [manualVoiceId, setManualVoiceId] = useState('')
+  const [manualAvatarId, setManualAvatarId] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('heygen_avatar_id') ?? '' : ''
+  )
+  const [manualVoiceId, setManualVoiceId] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('heygen_voice_id') ?? '' : ''
+  )
 
   useEffect(() => {
     fetch('/api/accounts')
@@ -418,7 +422,7 @@ export default function TikTokGeneratePage() {
                     <label className="mb-1 block text-xs font-medium text-gray-600">Avatar ID</label>
                     <input
                       value={manualAvatarId}
-                      onChange={e => setManualAvatarId(e.target.value)}
+                      onChange={e => { setManualAvatarId(e.target.value); localStorage.setItem('heygen_avatar_id', e.target.value) }}
                       placeholder="avatar_..."
                       className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
                     />
@@ -427,7 +431,7 @@ export default function TikTokGeneratePage() {
                     <label className="mb-1 block text-xs font-medium text-gray-600">Voice ID</label>
                     <input
                       value={manualVoiceId}
-                      onChange={e => setManualVoiceId(e.target.value)}
+                      onChange={e => { setManualVoiceId(e.target.value); localStorage.setItem('heygen_voice_id', e.target.value) }}
                       placeholder="voice_..."
                       className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
                     />
