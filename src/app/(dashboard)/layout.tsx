@@ -18,7 +18,7 @@ import { createClient } from '@/lib/supabase-browser'
 const navItems = [
   { href: '/dashboard', label: 'ホーム', icon: LayoutDashboard },
   { href: '/dashboard/generate', label: '投稿生成', icon: PenLine },
-  { href: '/dashboard/drafts', label: '下書き一覧', icon: FileText },
+  { href: '/dashboard/drafts', label: '下書き', icon: FileText },
   { href: '/dashboard/schedule', label: 'スケジュール', icon: CalendarClock },
   { href: '/dashboard/accounts', label: 'アカウント', icon: Users },
   { href: '/dashboard/logs', label: 'ログ', icon: ScrollText },
@@ -40,8 +40,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC]">
-      {/* Sidebar */}
-      <nav className="flex w-60 shrink-0 flex-col bg-slate-800">
+      {/* Sidebar — desktop only */}
+      <nav className="hidden md:flex w-60 shrink-0 flex-col bg-slate-800">
         {/* Logo */}
         <div className="flex items-center gap-3 border-b border-slate-700 px-5 py-5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#00A3BF]">
@@ -91,9 +91,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </nav>
 
       {/* Main */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto pb-16 md:pb-0">
+        {/* Mobile header */}
+        <div className="flex items-center justify-between border-b border-[#e5edf5] bg-white px-4 py-3 md:hidden">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#00A3BF]">
+              <Zap className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
+            </div>
+            <p className="text-sm font-bold text-slate-800">AutoPost</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 transition-colors"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            ログアウト
+          </button>
+        </div>
+
         {children}
       </main>
+
+      {/* Bottom nav — mobile only */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-[#e5edf5] bg-white md:hidden">
+        {navItems.map(({ href, label, icon: Icon }) => {
+          const active = isActive(href)
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cx(
+                'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+                active ? 'text-[#00A3BF]' : 'text-slate-400',
+              )}
+            >
+              <Icon className={cx('h-5 w-5', active ? 'text-[#00A3BF]' : 'text-slate-400')} />
+              {label}
+            </Link>
+          )
+        })}
+      </nav>
     </div>
   )
 }

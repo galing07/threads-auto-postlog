@@ -357,7 +357,7 @@ export default function ThreadsGeneratePage() {
               <SectionLabel>投稿の型</SectionLabel>
               <span className="text-xs text-gray-400">任意</span>
             </div>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {POST_TYPES.map(t => (
                 <button
                   key={t.value}
@@ -538,7 +538,7 @@ export default function ThreadsGeneratePage() {
             {imageUrl ? (
               <>
                 <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
-                <div className="mt-2 flex gap-2">
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                   <input
                     value={imageEditPrompt}
                     onChange={e => setImageEditPrompt(e.target.value)}
@@ -550,7 +550,7 @@ export default function ThreadsGeneratePage() {
                   <button
                     onClick={handleEditImage}
                     disabled={!imageEditPrompt.trim() || imageEditing}
-                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-[#00A3BF] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#008CA8] disabled:opacity-40"
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[#00A3BF] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#008CA8] disabled:opacity-40 sm:w-auto sm:shrink-0"
                   >
                     <Wand2 className={cx('h-3.5 w-3.5', imageEditing && 'animate-pulse')} />
                     {imageEditing ? '修正中...' : '修正'}

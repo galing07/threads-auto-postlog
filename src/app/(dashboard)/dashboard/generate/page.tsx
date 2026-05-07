@@ -72,14 +72,14 @@ export default function GeneratePage() {
             </div>
             <h2 className="text-base font-semibold text-gray-900">TikTok</h2>
             <p className="mt-1 text-sm text-gray-500 flex-1">
-              トークスクリプトを生成してHeyGenアバター動画を作成します
+              30秒スクリプトを生成してElevenLabsでAI音声を作成します
             </p>
             <div className="mt-4 flex flex-wrap gap-1.5">
               <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
                 <MessageCircle className="h-3 w-3" />スクリプト
               </span>
               <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                <Video className="h-3 w-3" />アバター動画
+                <Video className="h-3 w-3" />AI音声
               </span>
             </div>
             <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[#ff2d55] group-hover:text-[#d9244a] transition-colors">

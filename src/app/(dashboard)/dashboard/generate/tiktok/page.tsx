@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import {
-  Sparkles, Send, Save, RefreshCw, ChevronLeft,
-  CheckCircle, Lightbulb, Loader2, Video, AlertCircle,
+  Sparkles, Save, RefreshCw, ChevronLeft,
+  CheckCircle, Lightbulb, Loader2, Video, Mic, Download, Play,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
@@ -43,15 +43,20 @@ export default function TikTokGeneratePage() {
   const [suggestLoading, setSuggestLoading] = useState(false)
   const [generatedScript, setGeneratedScript] = useState('')
   const [generatedSummary, setGeneratedSummary] = useState('')
-  const [videoUrl, setVideoUrl] = useState('')
-  const [videoLoading, setVideoLoading] = useState(false)
+  const [audioUrl, setAudioUrl] = useState('')
+  const [audioLoading, setAudioLoading] = useState(false)
   const [savedPost, setSavedPost] = useState<Post | null>(null)
-  const [manualAvatarId, setManualAvatarId] = useState(() =>
+  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('elevenlabs_voice_id') ?? '' : ''
+  )
+  const [heygenAvatarId, setHeygenAvatarId] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem('heygen_avatar_id') ?? '' : ''
   )
-  const [manualVoiceId, setManualVoiceId] = useState(() =>
+  const [heygenVoiceId, setHeygenVoiceId] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem('heygen_voice_id') ?? '' : ''
   )
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoLoading, setVideoLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/accounts')
@@ -64,10 +69,6 @@ export default function TikTokGeneratePage() {
   }, [])
 
   const currentAccount = accounts.find(a => a.id === selectedAccount)
-  const effectiveAvatarId = currentAccount?.heygen_avatar_id ?? manualAvatarId
-  const effectiveVoiceId = currentAccount?.heygen_voice_id ?? manualVoiceId
-  const hasHeyGen = Boolean(effectiveAvatarId && effectiveVoiceId)
-  const isDemoMode = !selectedAccount
 
   async function handleSuggestThemes() {
     setSuggestLoading(true)
@@ -108,6 +109,8 @@ export default function TikTokGeneratePage() {
       if (data.error) throw new Error(data.error)
       setGeneratedScript(data.content)
       setGeneratedSummary(data.summary ?? '')
+      setAudioUrl('')
+      setVideoUrl('')
       setStep('preview')
     } catch (e) {
       alert(e instanceof Error ? e.message : '生成に失敗しました')
@@ -116,8 +119,30 @@ export default function TikTokGeneratePage() {
     }
   }
 
+  async function handleGenerateAudio() {
+    if (!generatedScript) return
+    setAudioLoading(true)
+    try {
+      const res = await fetch('/api/generate/audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: generatedScript,
+          voiceId: elevenLabsVoiceId || undefined,
+        }),
+      })
+      const data = await res.json() as { audioUrl?: string; error?: string }
+      if (!res.ok || !data.audioUrl) throw new Error(data.error ?? '音声生成に失敗しました')
+      setAudioUrl(data.audioUrl)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '音声生成に失敗しました')
+    } finally {
+      setAudioLoading(false)
+    }
+  }
+
   async function handleGenerateVideo() {
-    if (!generatedScript || !hasHeyGen) return
+    if (!generatedScript || !heygenAvatarId || !heygenVoiceId) return
     setVideoLoading(true)
     try {
       const res = await fetch('/api/generate/video', {
@@ -125,10 +150,9 @@ export default function TikTokGeneratePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: generatedScript,
-          accountId: currentAccount?.id,
-          avatarId: effectiveAvatarId || undefined,
-          voiceId: effectiveVoiceId || undefined,
-          caption: true,
+          avatarId: heygenAvatarId,
+          voiceId: heygenVoiceId,
+          accountId: selectedAccount || undefined,
         }),
       })
       const data = await res.json() as { videoUrl?: string; error?: string }
@@ -150,7 +174,7 @@ export default function TikTokGeneratePage() {
         body: JSON.stringify({
           accountId: selectedAccount || undefined,
           textContent: generatedScript,
-          videoUrl: videoUrl || undefined,
+          videoUrl: videoUrl || audioUrl || undefined,
           theme,
           summary: generatedSummary || undefined,
         }),
@@ -172,11 +196,10 @@ export default function TikTokGeneratePage() {
     setPostType('')
     setGeneratedScript('')
     setGeneratedSummary('')
+    setAudioUrl('')
     setVideoUrl('')
     setSavedPost(null)
     setThemeSuggestions([])
-    setManualAvatarId('')
-    setManualVoiceId('')
   }
 
   if (step === 'done') {
@@ -188,8 +211,14 @@ export default function TikTokGeneratePage() {
           </div>
           <h2 className="text-lg font-semibold text-gray-900">保存しました！</h2>
           <p className="mt-1 text-sm text-gray-500">下書きとして保存されました</p>
-          {videoUrl && (
-            <p className="mt-1 text-xs text-gray-400">動画はTikTokアプリから手動で投稿してください</p>
+          {videoUrl ? (
+            <p className="mt-1 text-xs text-gray-400">
+              アバター動画をTikTokアプリからそのまま投稿できます
+            </p>
+          ) : audioUrl && (
+            <p className="mt-1 text-xs text-gray-400">
+              音声をCapCutなどで背景動画と合わせてTikTokに投稿してください
+            </p>
           )}
           <Button onClick={handleReset} className="mt-6 gap-2" style={{ backgroundColor: '#ff2d55', borderColor: '#ff2d55' }}>
             <Sparkles className="h-4 w-4" />
@@ -219,7 +248,7 @@ export default function TikTokGeneratePage() {
               TikTok 動画生成
             </h1>
           </div>
-          <p className="mt-0.5 text-sm text-gray-500 ml-9">トークスクリプト + HeyGenアバター動画を生成</p>
+          <p className="mt-0.5 text-sm text-gray-500 ml-9">30秒スクリプト + ElevenLabs音声を生成</p>
         </div>
         {step === 'preview' && (
           <button onClick={() => setStep('input')} className="mt-6 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors">
@@ -243,8 +272,7 @@ export default function TikTokGeneratePage() {
                     <div>
                       <p className="text-sm font-medium text-blue-700">デモモードで動作中</p>
                       <p className="mt-0.5 text-xs text-blue-600">
-                        アカウント未登録でもスクリプト生成・下書き保存ができます。
-                        HeyGen APIを登録後、アカウントを追加するとアバター動画も生成できます。
+                        アカウント未登録でもスクリプト生成・音声生成・下書き保存ができます。
                       </p>
                     </div>
                   </div>
@@ -256,21 +284,9 @@ export default function TikTokGeneratePage() {
                   className="w-full appearance-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-[#ff2d55] focus:ring-2 focus:ring-[#ff2d55]/20"
                 >
                   {accounts.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                      {a.heygen_avatar_id ? ' ✓ HeyGen設定済み' : ' （HeyGen未設定）'}
-                    </option>
+                    <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
-              )}
-
-              {selectedAccount && !hasHeyGen && (
-                <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
-                  <p className="text-xs text-amber-600">
-                    HeyGenのアバターIDとボイスIDが未設定です。アカウント設定で追加するとアバター動画を生成できます。
-                  </p>
-                </div>
               )}
             </div>
 
@@ -372,7 +388,7 @@ export default function TikTokGeneratePage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <SectionLabel>トークスクリプト</SectionLabel>
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">HeyGenが読み上げます</span>
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">ElevenLabsが読み上げます</span>
               </div>
               <button onClick={() => handleGenerate()} disabled={loading} className="flex items-center gap-1 text-xs font-medium text-[#ff2d55] hover:text-[#d9244a] disabled:opacity-50">
                 <RefreshCw className={cx('h-3 w-3', loading && 'animate-spin')} />
@@ -388,86 +404,165 @@ export default function TikTokGeneratePage() {
             <div className="flex items-center justify-between border-t border-gray-100 pt-2">
               <span className="text-xs text-gray-400">{generatedScript.length} 文字</span>
               <span className="text-xs text-gray-400">
-                {Math.round(generatedScript.length / 6)} 秒程度
+                約 {Math.round(generatedScript.length / 6)} 秒
               </span>
             </div>
           </Card>
 
-          {/* アバター動画 */}
+          {/* AI音声 */}
           <Card className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <SectionLabel>アバター動画</SectionLabel>
-                <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-medium text-purple-600">HeyGen + 字幕</span>
+                <SectionLabel>AI音声</SectionLabel>
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">ElevenLabs</span>
               </div>
-              {hasHeyGen && (
-                <button
-                  onClick={handleGenerateVideo}
-                  disabled={videoLoading}
-                  className="flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 disabled:opacity-50"
-                >
-                  {videoLoading
-                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                    : <Video className="h-3 w-3" />}
-                  {videoLoading ? '動画レンダリング中...' : videoUrl ? '再生成' : '動画を生成'}
-                </button>
-              )}
+              <button
+                onClick={handleGenerateAudio}
+                disabled={audioLoading || !generatedScript}
+                className="flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+              >
+                {audioLoading
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <Mic className="h-3 w-3" />}
+                {audioLoading ? '生成中...' : audioUrl ? '再生成' : '音声を生成'}
+              </button>
             </div>
 
-            {!hasHeyGen ? (
-              <div className="space-y-3">
-                <p className="text-xs text-gray-500">HeyGen の Avatar ID と Voice ID を入力すると動画を生成できます</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Avatar ID</label>
-                    <input
-                      value={manualAvatarId}
-                      onChange={e => { setManualAvatarId(e.target.value); localStorage.setItem('heygen_avatar_id', e.target.value) }}
-                      placeholder="avatar_..."
-                      className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Voice ID</label>
-                    <input
-                      value={manualVoiceId}
-                      onChange={e => { setManualVoiceId(e.target.value); localStorage.setItem('heygen_voice_id', e.target.value) }}
-                      placeholder="voice_..."
-                      className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
-                    />
-                  </div>
-                </div>
-                {!manualAvatarId || !manualVoiceId ? (
-                  <p className="text-[11px] text-gray-400">
-                    HeyGen ダッシュボード → Avatars / Voices から ID をコピーして貼り付けてください
-                  </p>
-                ) : null}
+            {/* Voice ID 入力 */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">
+                ElevenLabs Voice ID
+                <span className="ml-1 text-gray-400 font-normal">（空欄でデフォルト使用）</span>
+              </label>
+              <input
+                value={elevenLabsVoiceId}
+                onChange={e => {
+                  setElevenLabsVoiceId(e.target.value)
+                  localStorage.setItem('elevenlabs_voice_id', e.target.value)
+                }}
+                placeholder="例：21m00Tcm4TlvDq8ikWAM"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">
+                ElevenLabs → Voices から Voice ID をコピー。入力値はブラウザに保存されます
+              </p>
+            </div>
+
+            {/* 音声プレーヤー */}
+            {audioUrl ? (
+              <div className="space-y-2">
+                <audio src={audioUrl} controls className="w-full" />
+                <a
+                  href={audioUrl}
+                  download="tiktok-audio.mp3"
+                  className="flex items-center justify-center gap-1.5 w-full rounded-md border border-gray-200 bg-gray-50 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  音声をダウンロード (.mp3)
+                </a>
               </div>
-            ) : videoUrl ? (
-              <video src={videoUrl} controls className="w-full rounded-md bg-black" />
-            ) : videoLoading ? (
-              <div className="flex h-44 flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-purple-200 bg-purple-50/30">
-                <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
-                <div className="text-center">
-                  <p className="text-xs font-medium text-gray-700">動画を生成中...</p>
-                  <p className="mt-0.5 text-[10px] text-gray-400">HeyGenで1〜3分かかります。このタブを閉じないでください</p>
-                </div>
+            ) : audioLoading ? (
+              <div className="flex h-20 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-emerald-200 bg-emerald-50/30">
+                <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+                <p className="text-xs text-gray-500">ElevenLabsで音声生成中...</p>
               </div>
             ) : (
-              <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
-                <Video className="h-5 w-5 text-gray-300" />
-                <span className="text-xs text-gray-400">「動画を生成」でアバター動画を作成</span>
+              <div className="flex h-20 flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed border-[#e5edf5]">
+                <Mic className="h-4 w-4 text-gray-300" />
+                <span className="text-xs text-gray-400">「音声を生成」でリアルな音声を作成</span>
               </div>
             )}
           </Card>
 
-          {/* TikTok投稿メモ */}
-          <div className="rounded-md border border-blue-100 bg-blue-50 px-4 py-3">
-            <p className="text-xs font-medium text-blue-700">TikTok投稿について</p>
-            <p className="mt-0.5 text-xs text-blue-600">
-              現在はスクリプト・動画の生成と下書き保存に対応しています。
-              TikTok Content Posting APIの申請・設定後に自動投稿が利用可能になります。
-            </p>
+          {/* アバター動画 (HeyGen) */}
+          <Card className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <SectionLabel>アバター動画</SectionLabel>
+                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600">HeyGen</span>
+              </div>
+              <button
+                onClick={handleGenerateVideo}
+                disabled={videoLoading || !generatedScript || !heygenAvatarId || !heygenVoiceId}
+                className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700 disabled:opacity-50"
+              >
+                {videoLoading
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <Play className="h-3 w-3" />}
+                {videoLoading ? '生成中...' : videoUrl ? '再生成' : '動画を生成'}
+              </button>
+            </div>
+
+            {/* Avatar ID */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">
+                Avatar ID
+                <span className="ml-1 text-gray-400 font-normal">（HeyGen Dashboard → Avatars）</span>
+              </label>
+              <input
+                value={heygenAvatarId}
+                onChange={e => {
+                  setHeygenAvatarId(e.target.value)
+                  localStorage.setItem('heygen_avatar_id', e.target.value)
+                }}
+                placeholder="例：Angela-inBlackSuit-20220820"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
+              />
+            </div>
+
+            {/* Voice ID */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">
+                Voice ID
+                <span className="ml-1 text-gray-400 font-normal">（HeyGen Dashboard → Voices）</span>
+              </label>
+              <input
+                value={heygenVoiceId}
+                onChange={e => {
+                  setHeygenVoiceId(e.target.value)
+                  localStorage.setItem('heygen_voice_id', e.target.value)
+                }}
+                placeholder="例：1bd001e7e50f421d891986aad5158bc8"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">入力値はブラウザに保存されます。生成には1〜3分かかります</p>
+            </div>
+
+            {/* 動画プレーヤー / ステート */}
+            {videoUrl ? (
+              <div className="space-y-2">
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                <video src={videoUrl} controls className="w-full rounded-md" />
+                <a
+                  href={videoUrl}
+                  download="tiktok-video.mp4"
+                  className="flex items-center justify-center gap-1.5 w-full rounded-md border border-gray-200 bg-gray-50 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  動画をダウンロード (.mp4)
+                </a>
+              </div>
+            ) : videoLoading ? (
+              <div className="flex h-24 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-violet-200 bg-violet-50/30">
+                <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
+                <p className="text-xs text-gray-500">HeyGenで動画生成中（1〜3分）...</p>
+              </div>
+            ) : (
+              <div className="flex h-24 flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed border-[#e5edf5]">
+                <Video className="h-4 w-4 text-gray-300" />
+                <span className="text-xs text-gray-400">Avatar ID と Voice ID を入力して動画を生成</span>
+              </div>
+            )}
+          </Card>
+
+          {/* 使い方ガイド */}
+          <div className="rounded-md border border-gray-100 bg-gray-50 px-4 py-3 space-y-1">
+            <p className="text-xs font-medium text-gray-600">TikTok投稿の流れ</p>
+            <ol className="list-decimal list-inside space-y-0.5 text-xs text-gray-500">
+              <li>音声ファイルをダウンロード</li>
+              <li>CapCut で背景動画 + テキスト字幕 + 音声を合わせて編集</li>
+              <li>TikTokアプリから投稿</li>
+            </ol>
           </div>
 
           {/* アクション */}
