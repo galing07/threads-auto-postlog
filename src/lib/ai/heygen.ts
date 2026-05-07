@@ -67,7 +67,10 @@ export async function listAvatars(): Promise<HeygenAvatar[]> {
 export interface GenerateVideoOptions {
   text: string
   avatarId: string
-  voiceId: string
+  /** HeyGen Voice ID（audioUrl未指定時に必須） */
+  voiceId?: string
+  /** ElevenLabs等で事前生成した音声URL。指定するとvoiceIdより優先 */
+  audioUrl?: string
   /** デフォルト 1080×1920（縦・TikTok向け） */
   width?: number
   height?: number
@@ -83,11 +86,19 @@ export interface GenerateVideoOptions {
 
 export async function startVideoGeneration(opts: GenerateVideoOptions): Promise<string> {
   const {
-    text, avatarId, voiceId,
+    text, avatarId, voiceId, audioUrl,
     width = 1080, height = 1920,
     caption = true, avatarStyle = 'normal',
     background,
   } = opts
+
+  if (!audioUrl && !voiceId) {
+    throw new Error('voiceId か audioUrl のどちらかが必要です')
+  }
+
+  const voice = audioUrl
+    ? { type: 'audio', audio_url: audioUrl }
+    : { type: 'text', input_text: text, voice_id: voiceId }
 
   const body: Record<string, unknown> = {
     video_inputs: [
@@ -97,11 +108,7 @@ export async function startVideoGeneration(opts: GenerateVideoOptions): Promise<
           avatar_id: avatarId,
           avatar_style: avatarStyle,
         },
-        voice: {
-          type: 'text',
-          input_text: text,
-          voice_id: voiceId,
-        },
+        voice,
         ...(background ? { background } : {}),
       },
     ],

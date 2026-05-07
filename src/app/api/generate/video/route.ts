@@ -12,10 +12,11 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const { text, avatarId, voiceId, accountId, caption = true } = await req.json() as {
+    const { text, avatarId, voiceId, audioUrl, accountId, caption = true } = await req.json() as {
       text?: string
       avatarId?: string
       voiceId?: string
+      audioUrl?: string
       accountId?: string
       caption?: boolean
     }
@@ -40,9 +41,16 @@ export async function POST(req: NextRequest) {
       resolvedVoiceId = resolvedVoiceId || acc?.heygen_voice_id || undefined
     }
 
-    if (!resolvedAvatarId || !resolvedVoiceId) {
+    if (!resolvedAvatarId) {
       return NextResponse.json(
-        { error: 'avatarId と voiceId が必要です（アカウントに設定するか引数で渡してください）' },
+        { error: 'avatarId が必要です（アカウントに設定するか引数で渡してください）' },
+        { status: 400 },
+      )
+    }
+
+    if (!audioUrl && !resolvedVoiceId) {
+      return NextResponse.json(
+        { error: 'voiceId または audioUrl が必要です' },
         { status: 400 },
       )
     }
@@ -52,6 +60,7 @@ export async function POST(req: NextRequest) {
       text: text.trim(),
       avatarId: resolvedAvatarId,
       voiceId: resolvedVoiceId,
+      audioUrl,
       caption,
       width: 1080,
       height: 1920,

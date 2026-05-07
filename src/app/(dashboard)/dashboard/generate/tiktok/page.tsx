@@ -142,7 +142,8 @@ export default function TikTokGeneratePage() {
   }
 
   async function handleGenerateVideo() {
-    if (!generatedScript || !heygenAvatarId || !heygenVoiceId) return
+    if (!generatedScript || !heygenAvatarId) return
+    if (!audioUrl && !heygenVoiceId) return
     setVideoLoading(true)
     try {
       const res = await fetch('/api/generate/video', {
@@ -151,7 +152,8 @@ export default function TikTokGeneratePage() {
         body: JSON.stringify({
           text: generatedScript,
           avatarId: heygenAvatarId,
-          voiceId: heygenVoiceId,
+          // ElevenLabs音声があれば優先して渡す（HeyGen Voice ID不要）
+          ...(audioUrl ? { audioUrl } : { voiceId: heygenVoiceId }),
           accountId: selectedAccount || undefined,
         }),
       })
@@ -483,7 +485,7 @@ export default function TikTokGeneratePage() {
               </div>
               <button
                 onClick={handleGenerateVideo}
-                disabled={videoLoading || !generatedScript || !heygenAvatarId || !heygenVoiceId}
+                disabled={videoLoading || !generatedScript || !heygenAvatarId || (!heygenVoiceId && !audioUrl)}
                 className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700 disabled:opacity-50"
               >
                 {videoLoading
@@ -516,16 +518,26 @@ export default function TikTokGeneratePage() {
                 Voice ID
                 <span className="ml-1 text-gray-400 font-normal">（HeyGen Dashboard → Voices）</span>
               </label>
+              {audioUrl && (
+                <div className="mb-1.5 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5">
+                  <span className="text-[11px] text-emerald-700">✓ ElevenLabs音声を使用します（Voice ID不要）</span>
+                </div>
+              )}
               <input
                 value={heygenVoiceId}
                 onChange={e => {
                   setHeygenVoiceId(e.target.value)
                   localStorage.setItem('heygen_voice_id', e.target.value)
                 }}
-                placeholder="例：1bd001e7e50f421d891986aad5158bc8"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
+                placeholder={audioUrl ? '（ElevenLabs音声使用中 — 空欄でOK）' : '例：1bd001e7e50f421d891986aad5158bc8'}
+                disabled={!!audioUrl}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200 disabled:bg-gray-50 disabled:text-gray-400"
               />
-              <p className="mt-1 text-[11px] text-gray-400">入力値はブラウザに保存されます。生成には1〜3分かかります</p>
+              <p className="mt-1 text-[11px] text-gray-400">
+                {audioUrl
+                  ? 'ElevenLabs音声をアバターに同期します。生成には1〜3分かかります'
+                  : '入力値はブラウザに保存されます。生成には1〜3分かかります'}
+              </p>
             </div>
 
             {/* 動画プレーヤー / ステート */}
