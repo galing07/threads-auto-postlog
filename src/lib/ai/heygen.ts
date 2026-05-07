@@ -70,8 +70,11 @@ export async function listAvatars(): Promise<HeygenAvatar[]> {
 
   if (v2Res.status === 'fulfilled' && v2Res.value.ok) {
     const json = await v2Res.value.json() as { data?: { avatars?: HeygenAvatar[] } }
-    console.log('[heygen] v2/avatars raw:', JSON.stringify(json).slice(0, 500))
-    avatars.push(...(json.data?.avatars ?? []))
+    const list = json.data?.avatars ?? []
+    console.log(`[heygen] v2/avatars count=${list.length} ids=${list.map(a => a.avatar_id).join(',')}`)
+    avatars.push(...list)
+  } else if (v2Res.status === 'fulfilled') {
+    console.log('[heygen] v2/avatars status:', v2Res.value.status)
   }
 
   if (v1Res.status === 'fulfilled' && v1Res.value.ok) {
@@ -80,7 +83,8 @@ export async function listAvatars(): Promise<HeygenAvatar[]> {
         avatars?: Array<{ avatar_id: string; avatar_name: string; gender?: string; preview_image_url?: string }>
       }
     }
-    console.log('[heygen] v1/avatar.list raw:', JSON.stringify(json).slice(0, 500))
+    const list = json.data?.avatars ?? []
+    console.log(`[heygen] v1/avatar.list count=${list.length} ids=${list.slice(0,5).map(a => a.avatar_id).join(',')}`)
     const v1Avatars = json.data?.avatars ?? []
     // v2 と重複しないものを追加
     const existingIds = new Set(avatars.map(a => a.avatar_id))
@@ -89,10 +93,7 @@ export async function listAvatars(): Promise<HeygenAvatar[]> {
     }
   }
 
-  if (avatars.length === 0) {
-    throw new Error('アバターが見つかりませんでした。HeyGen APIキーとプランを確認してください')
-  }
-
+  console.log(`[heygen] total avatars returned: ${avatars.length}`)
   return avatars
 }
 
