@@ -59,12 +59,41 @@ export interface HeygenAvatar {
 }
 
 export async function listAvatars(): Promise<HeygenAvatar[]> {
-  const res = await fetch(`${API_BASE}/v2/avatars`, {
-    headers: { 'X-Api-Key': apiKey() },
-  })
-  if (!res.ok) throw new Error(`HeyGen avatars fetch failed: ${res.status}`)
-  const json = await res.json() as { data?: { avatars?: HeygenAvatar[] } }
-  return json.data?.avatars ?? []
+  // v2/avatars はカスタムアバターのみ。ストックアバター（Alexa等）は
+  // v1/avatar.list が返す場合があるため両方試みてマージする
+  const [v2Res, v1Res] = await Promise.allSettled([
+    fetch(`${API_BASE}/v2/avatars`, { headers: { 'X-Api-Key': apiKey() } }),
+    fetch(`${API_BASE}/v1/avatar.list`, { headers: { 'X-Api-Key': apiKey() } }),
+  ])
+
+  const avatars: HeygenAvatar[] = []
+
+  if (v2Res.status === 'fulfilled' && v2Res.value.ok) {
+    const json = await v2Res.value.json() as { data?: { avatars?: HeygenAvatar[] } }
+    console.log('[heygen] v2/avatars raw:', JSON.stringify(json).slice(0, 500))
+    avatars.push(...(json.data?.avatars ?? []))
+  }
+
+  if (v1Res.status === 'fulfilled' && v1Res.value.ok) {
+    const json = await v1Res.value.json() as {
+      data?: {
+        avatars?: Array<{ avatar_id: string; avatar_name: string; gender?: string; preview_image_url?: string }>
+      }
+    }
+    console.log('[heygen] v1/avatar.list raw:', JSON.stringify(json).slice(0, 500))
+    const v1Avatars = json.data?.avatars ?? []
+    // v2 と重複しないものを追加
+    const existingIds = new Set(avatars.map(a => a.avatar_id))
+    for (const a of v1Avatars) {
+      if (!existingIds.has(a.avatar_id)) avatars.push(a)
+    }
+  }
+
+  if (avatars.length === 0) {
+    throw new Error('アバターが見つかりませんでした。HeyGen APIキーとプランを確認してください')
+  }
+
+  return avatars
 }
 
 // ────────────────────────────────────────────
