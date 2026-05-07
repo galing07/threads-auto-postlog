@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Sparkles, Save, RefreshCw, ChevronLeft,
   CheckCircle, Lightbulb, Loader2, Video, Mic, Download, Play,
+  ChevronDown, X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
@@ -11,6 +12,21 @@ import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { cx } from '@/lib/utils'
 import type { Account, Post } from '@/types/database'
+
+interface HeygenAvatar {
+  avatar_id: string
+  avatar_name: string
+  gender?: string
+  preview_image_url?: string
+}
+
+interface HeygenVoice {
+  voice_id: string
+  name: string
+  gender?: string
+  language?: string
+  preview_audio?: string
+}
 
 type Step = 'input' | 'preview' | 'done'
 
@@ -57,6 +73,11 @@ export default function TikTokGeneratePage() {
   )
   const [videoUrl, setVideoUrl] = useState('')
   const [videoLoading, setVideoLoading] = useState(false)
+  const [avatarList, setAvatarList] = useState<HeygenAvatar[]>([])
+  const [voiceList, setVoiceList] = useState<HeygenVoice[]>([])
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false)
+  const [showVoicePicker, setShowVoicePicker] = useState(false)
+  const [pickerLoading, setPickerLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/accounts')
@@ -138,6 +159,40 @@ export default function TikTokGeneratePage() {
       alert(e instanceof Error ? e.message : '音声生成に失敗しました')
     } finally {
       setAudioLoading(false)
+    }
+  }
+
+  async function openAvatarPicker() {
+    setShowAvatarPicker(true)
+    if (avatarList.length > 0) return
+    setPickerLoading(true)
+    try {
+      const res = await fetch('/api/heygen/avatars')
+      const data = await res.json() as { avatars?: HeygenAvatar[]; error?: string }
+      if (data.error) throw new Error(data.error)
+      setAvatarList(data.avatars ?? [])
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'アバター一覧の取得に失敗しました')
+      setShowAvatarPicker(false)
+    } finally {
+      setPickerLoading(false)
+    }
+  }
+
+  async function openVoicePicker() {
+    setShowVoicePicker(true)
+    if (voiceList.length > 0) return
+    setPickerLoading(true)
+    try {
+      const res = await fetch('/api/heygen/voices?language=Japanese')
+      const data = await res.json() as { voices?: HeygenVoice[]; error?: string }
+      if (data.error) throw new Error(data.error)
+      setVoiceList(data.voices ?? [])
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'ボイス一覧の取得に失敗しました')
+      setShowVoicePicker(false)
+    } finally {
+      setPickerLoading(false)
     }
   }
 
@@ -232,6 +287,7 @@ export default function TikTokGeneratePage() {
   }
 
   return (
+    <>
     <div className="p-6 lg:p-8 max-w-2xl">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
@@ -497,27 +553,43 @@ export default function TikTokGeneratePage() {
 
             {/* Avatar ID */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">
-                Avatar ID
-                <span className="ml-1 text-gray-400 font-normal">（HeyGen Dashboard → Avatars）</span>
-              </label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-medium text-gray-500">アバター</label>
+                <button
+                  type="button"
+                  onClick={openAvatarPicker}
+                  className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700 transition-colors"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                  一覧から選択
+                </button>
+              </div>
               <input
                 value={heygenAvatarId}
                 onChange={e => {
                   setHeygenAvatarId(e.target.value)
                   localStorage.setItem('heygen_avatar_id', e.target.value)
                 }}
-                placeholder="例：Angela-inBlackSuit-20220820"
+                placeholder="アバターを選択 または IDを直接入力"
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
               />
             </div>
 
             {/* Voice ID */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">
-                Voice ID
-                <span className="ml-1 text-gray-400 font-normal">（HeyGen Dashboard → Voices）</span>
-              </label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-medium text-gray-500">ボイス</label>
+                {!audioUrl && (
+                  <button
+                    type="button"
+                    onClick={openVoicePicker}
+                    className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700 transition-colors"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                    一覧から選択
+                  </button>
+                )}
+              </div>
               {audioUrl && (
                 <div className="mb-1.5 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5">
                   <span className="text-[11px] text-emerald-700">✓ ElevenLabs音声を使用します（Voice ID不要）</span>
@@ -529,7 +601,7 @@ export default function TikTokGeneratePage() {
                   setHeygenVoiceId(e.target.value)
                   localStorage.setItem('heygen_voice_id', e.target.value)
                 }}
-                placeholder={audioUrl ? '（ElevenLabs音声使用中 — 空欄でOK）' : '例：1bd001e7e50f421d891986aad5158bc8'}
+                placeholder={audioUrl ? '（ElevenLabs音声使用中 — 空欄でOK）' : 'ボイスを選択 または IDを直接入力'}
                 disabled={!!audioUrl}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-900 outline-hidden transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200 disabled:bg-gray-50 disabled:text-gray-400"
               />
@@ -587,5 +659,113 @@ export default function TikTokGeneratePage() {
         </div>
       )}
     </div>
+
+    {/* ── アバターピッカーモーダル ── */}
+    {showAvatarPicker && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/40" onClick={() => setShowAvatarPicker(false)}>
+        <div className="w-full max-w-lg rounded-t-2xl sm:rounded-xl bg-white shadow-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <p className="text-sm font-semibold text-gray-900">アバターを選択</p>
+            <button onClick={() => setShowAvatarPicker(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="overflow-y-auto p-4">
+            {pickerLoading ? (
+              <div className="flex h-40 items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
+                <span className="text-sm text-gray-500">読み込み中...</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {avatarList.map(a => (
+                  <button
+                    key={a.avatar_id}
+                    type="button"
+                    onClick={() => {
+                      setHeygenAvatarId(a.avatar_id)
+                      localStorage.setItem('heygen_avatar_id', a.avatar_id)
+                      setShowAvatarPicker(false)
+                    }}
+                    className={cx(
+                      'flex flex-col overflow-hidden rounded-lg border-2 text-left transition-all hover:border-violet-400',
+                      heygenAvatarId === a.avatar_id ? 'border-violet-500' : 'border-[#e5edf5]',
+                    )}
+                  >
+                    {a.preview_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={a.preview_image_url} alt={a.avatar_name} className="aspect-[3/4] w-full object-cover" />
+                    ) : (
+                      <div className="aspect-[3/4] w-full bg-gray-100 flex items-center justify-center">
+                        <Video className="h-8 w-8 text-gray-300" />
+                      </div>
+                    )}
+                    <div className="p-2">
+                      <p className="text-[11px] font-medium text-gray-800 leading-tight line-clamp-2">{a.avatar_name}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-400">{a.gender}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── ボイスピッカーモーダル ── */}
+    {showVoicePicker && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/40" onClick={() => setShowVoicePicker(false)}>
+        <div className="w-full max-w-lg rounded-t-2xl sm:rounded-xl bg-white shadow-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <p className="text-sm font-semibold text-gray-900">ボイスを選択（日本語）</p>
+            <button onClick={() => setShowVoicePicker(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="overflow-y-auto p-4">
+            {pickerLoading ? (
+              <div className="flex h-40 items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
+                <span className="text-sm text-gray-500">読み込み中...</span>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {voiceList.map(v => (
+                  <button
+                    key={v.voice_id}
+                    type="button"
+                    onClick={() => {
+                      setHeygenVoiceId(v.voice_id)
+                      localStorage.setItem('heygen_voice_id', v.voice_id)
+                      setShowVoicePicker(false)
+                    }}
+                    className={cx(
+                      'flex w-full items-center justify-between rounded-lg border-2 px-3 py-2.5 text-left transition-all hover:border-violet-400',
+                      heygenVoiceId === v.voice_id ? 'border-violet-500 bg-violet-50' : 'border-[#e5edf5] bg-white',
+                    )}
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{v.name}</p>
+                      <p className="text-[11px] text-gray-400">{v.gender} · {v.language}</p>
+                    </div>
+                    {v.preview_audio && (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); new Audio(v.preview_audio!).play() }}
+                        className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 hover:bg-violet-100 transition-colors"
+                      >
+                        <Play className="h-3 w-3 text-gray-600" />
+                      </button>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
