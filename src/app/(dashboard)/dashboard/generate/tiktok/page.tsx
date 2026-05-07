@@ -13,11 +13,17 @@ import { Textarea } from '@/components/ui/Textarea'
 import { cx } from '@/lib/utils'
 import type { Account, Post } from '@/types/database'
 
+interface HeygenLook {
+  look_id: string
+  preview_image_url?: string
+}
+
 interface HeygenAvatar {
   avatar_id: string
   avatar_name: string
   gender?: string
   preview_image_url?: string
+  looks?: HeygenLook[]
 }
 
 interface HeygenVoice {
@@ -73,11 +79,16 @@ export default function TikTokGeneratePage() {
   )
   const [videoUrl, setVideoUrl] = useState('')
   const [videoLoading, setVideoLoading] = useState(false)
+  const [heygenLookId, setHeygenLookId] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('heygen_look_id') ?? '' : ''
+  )
   const [avatarList, setAvatarList] = useState<HeygenAvatar[]>([])
   const [voiceList, setVoiceList] = useState<HeygenVoice[]>([])
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [showVoicePicker, setShowVoicePicker] = useState(false)
   const [pickerLoading, setPickerLoading] = useState(false)
+  // アバター選択後、そのLooks一覧を表示するために使う
+  const [selectedAvatarForLooks, setSelectedAvatarForLooks] = useState<HeygenAvatar | null>(null)
 
   useEffect(() => {
     fetch('/api/accounts')
@@ -207,6 +218,7 @@ export default function TikTokGeneratePage() {
         body: JSON.stringify({
           text: generatedScript,
           avatarId: heygenAvatarId,
+          lookId: heygenLookId || undefined,
           // ElevenLabs音声があれば優先して渡す（HeyGen Voice ID不要）
           ...(audioUrl ? { audioUrl } : { voiceId: heygenVoiceId }),
           accountId: selectedAccount || undefined,
@@ -255,6 +267,7 @@ export default function TikTokGeneratePage() {
     setGeneratedSummary('')
     setAudioUrl('')
     setVideoUrl('')
+    setHeygenLookId('')
     setSavedPost(null)
     setThemeSuggestions([])
   }
@@ -662,11 +675,18 @@ export default function TikTokGeneratePage() {
 
     {/* ── アバターピッカーモーダル ── */}
     {showAvatarPicker && (
-      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/40" onClick={() => setShowAvatarPicker(false)}>
+      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/40" onClick={() => { setShowAvatarPicker(false); setSelectedAvatarForLooks(null) }}>
         <div className="w-full max-w-lg rounded-t-2xl sm:rounded-xl bg-white shadow-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-            <p className="text-sm font-semibold text-gray-900">アバターを選択</p>
-            <button onClick={() => setShowAvatarPicker(false)} className="text-gray-400 hover:text-gray-600">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
+            {selectedAvatarForLooks && (
+              <button onClick={() => setSelectedAvatarForLooks(null)} className="text-gray-400 hover:text-gray-600">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
+            <p className="flex-1 text-sm font-semibold text-gray-900">
+              {selectedAvatarForLooks ? `${selectedAvatarForLooks.avatar_name} — Lookを選択` : 'アバターを選択'}
+            </p>
+            <button onClick={() => { setShowAvatarPicker(false); setSelectedAvatarForLooks(null) }} className="text-gray-400 hover:text-gray-600">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -676,16 +696,70 @@ export default function TikTokGeneratePage() {
                 <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
                 <span className="text-sm text-gray-500">読み込み中...</span>
               </div>
+            ) : selectedAvatarForLooks ? (
+              /* ── Look一覧 ── */
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {/* Lookなしでアバターのデフォルトを使うオプション */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeygenAvatarId(selectedAvatarForLooks.avatar_id)
+                    setHeygenLookId('')
+                    localStorage.setItem('heygen_avatar_id', selectedAvatarForLooks.avatar_id)
+                    localStorage.removeItem('heygen_look_id')
+                    setShowAvatarPicker(false)
+                    setSelectedAvatarForLooks(null)
+                  }}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-[#e5edf5] p-4 text-xs text-gray-400 hover:border-violet-400 hover:text-violet-600 transition-all"
+                >
+                  <Video className="h-6 w-6" />
+                  デフォルト
+                </button>
+                {selectedAvatarForLooks.looks?.map(l => (
+                  <button
+                    key={l.look_id}
+                    type="button"
+                    onClick={() => {
+                      setHeygenAvatarId(selectedAvatarForLooks.avatar_id)
+                      setHeygenLookId(l.look_id)
+                      localStorage.setItem('heygen_avatar_id', selectedAvatarForLooks.avatar_id)
+                      localStorage.setItem('heygen_look_id', l.look_id)
+                      setShowAvatarPicker(false)
+                      setSelectedAvatarForLooks(null)
+                    }}
+                    className={cx(
+                      'flex flex-col overflow-hidden rounded-lg border-2 text-left transition-all hover:border-violet-400',
+                      heygenLookId === l.look_id ? 'border-violet-500' : 'border-[#e5edf5]',
+                    )}
+                  >
+                    {l.preview_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={l.preview_image_url} alt={l.look_id} className="aspect-[3/4] w-full object-cover" />
+                    ) : (
+                      <div className="aspect-[3/4] w-full bg-gray-100 flex items-center justify-center">
+                        <Video className="h-8 w-8 text-gray-300" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
             ) : (
+              /* ── アバター一覧 ── */
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {avatarList.map(a => (
                   <button
                     key={a.avatar_id}
                     type="button"
                     onClick={() => {
-                      setHeygenAvatarId(a.avatar_id)
-                      localStorage.setItem('heygen_avatar_id', a.avatar_id)
-                      setShowAvatarPicker(false)
+                      if (a.looks && a.looks.length > 0) {
+                        setSelectedAvatarForLooks(a)
+                      } else {
+                        setHeygenAvatarId(a.avatar_id)
+                        setHeygenLookId('')
+                        localStorage.setItem('heygen_avatar_id', a.avatar_id)
+                        localStorage.removeItem('heygen_look_id')
+                        setShowAvatarPicker(false)
+                      }
                     }}
                     className={cx(
                       'flex flex-col overflow-hidden rounded-lg border-2 text-left transition-all hover:border-violet-400',
@@ -702,7 +776,9 @@ export default function TikTokGeneratePage() {
                     )}
                     <div className="p-2">
                       <p className="text-[11px] font-medium text-gray-800 leading-tight line-clamp-2">{a.avatar_name}</p>
-                      <p className="mt-0.5 text-[10px] text-gray-400">{a.gender}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-400">
+                        {a.gender}{a.looks && a.looks.length > 0 ? ` · ${a.looks.length} looks` : ''}
+                      </p>
                     </div>
                   </button>
                 ))}

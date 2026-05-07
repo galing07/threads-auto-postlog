@@ -43,12 +43,19 @@ export async function listVoices(language?: string): Promise<HeygenVoice[]> {
 // Avatars (オプション、UI からの選択用)
 // ────────────────────────────────────────────
 
+export interface HeygenLook {
+  look_id: string
+  preview_image_url?: string
+  preview_video_url?: string
+}
+
 export interface HeygenAvatar {
   avatar_id: string
   avatar_name: string
   gender?: string
   preview_image_url?: string
   preview_video_url?: string
+  looks?: HeygenLook[]
 }
 
 export async function listAvatars(): Promise<HeygenAvatar[]> {
@@ -67,6 +74,8 @@ export async function listAvatars(): Promise<HeygenAvatar[]> {
 export interface GenerateVideoOptions {
   text: string
   avatarId: string
+  /** アバターの特定Look（衣装・背景）ID。省略時はデフォルトLook */
+  lookId?: string
   /** HeyGen Voice ID（audioUrl未指定時に必須） */
   voiceId?: string
   /** ElevenLabs等で事前生成した音声URL。指定するとvoiceIdより優先 */
@@ -86,7 +95,7 @@ export interface GenerateVideoOptions {
 
 export async function startVideoGeneration(opts: GenerateVideoOptions): Promise<string> {
   const {
-    text, avatarId, voiceId, audioUrl,
+    text, avatarId, lookId, voiceId, audioUrl,
     width = 1080, height = 1920,
     caption = true, avatarStyle = 'normal',
     background,
@@ -107,6 +116,7 @@ export async function startVideoGeneration(opts: GenerateVideoOptions): Promise<
           type: 'avatar',
           avatar_id: avatarId,
           avatar_style: avatarStyle,
+          ...(lookId ? { look_id: lookId } : {}),
         },
         voice,
         ...(background ? { background } : {}),

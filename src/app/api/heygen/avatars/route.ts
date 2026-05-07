@@ -14,6 +14,10 @@ export async function GET() {
       avatar_name: a.avatar_name,
       gender: a.gender,
       preview_image_url: a.preview_image_url,
+      looks: a.looks?.map(l => ({
+        look_id: l.look_id,
+        preview_image_url: l.preview_image_url,
+      })) ?? [],
     }))
 
     return NextResponse.json({ avatars: slim })

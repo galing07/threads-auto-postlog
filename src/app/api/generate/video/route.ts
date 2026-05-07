@@ -12,9 +12,10 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const { text, avatarId, voiceId, audioUrl, accountId, caption = true } = await req.json() as {
+    const { text, avatarId, lookId, voiceId, audioUrl, accountId, caption = true } = await req.json() as {
       text?: string
       avatarId?: string
+      lookId?: string
       voiceId?: string
       audioUrl?: string
       accountId?: string
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
     const videoId = await startVideoGeneration({
       text: text.trim(),
       avatarId: resolvedAvatarId,
+      lookId,
       voiceId: resolvedVoiceId,
       audioUrl,
       caption,
