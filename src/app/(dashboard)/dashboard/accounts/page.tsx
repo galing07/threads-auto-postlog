@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, User, X, CheckCircle, AlertCircle, Eye, EyeOff, BookOpen } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -22,15 +21,6 @@ const TONES = [
   { value: 'personal',     label: '体験談・等身大' },
 ]
 
-const ERROR_MESSAGES: Record<string, string> = {
-  cancelled:        '連携がキャンセルされました',
-  session_expired:  'セッションが期限切れです。もう一度お試しください',
-  invalid_state:    '不正なリクエストです。もう一度お試しください',
-  token_failed:     'トークンの取得に失敗しました',
-  db_failed:        'アカウントの保存に失敗しました',
-  unknown:          '予期しないエラーが発生しました',
-}
-
 function FieldLabel({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
   return (
     <div className="mb-1.5 flex items-center justify-between">
@@ -38,38 +28,6 @@ function FieldLabel({ children, optional }: { children: React.ReactNode; optiona
       {optional && <span className="text-xs text-gray-400">任意</span>}
     </div>
   )
-}
-
-function OAuthToast() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const success = searchParams.get('success') === '1'
-  const errorKey = searchParams.get('error') ?? ''
-
-  useEffect(() => {
-    if (success || errorKey) {
-      const timer = setTimeout(() => router.replace('/dashboard/accounts'), 4000)
-      return () => clearTimeout(timer)
-    }
-  }, [success, errorKey, router])
-
-  if (success) {
-    return (
-      <div className="mb-4 flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 ring-1 ring-green-200">
-        <CheckCircle className="h-4 w-4 shrink-0" />
-        Threadsアカウントを連携しました！
-      </div>
-    )
-  }
-  if (errorKey) {
-    return (
-      <div className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
-        <AlertCircle className="h-4 w-4 shrink-0" />
-        {ERROR_MESSAGES[errorKey] ?? 'エラーが発生しました'}
-      </div>
-    )
-  }
-  return null
 }
 
 // ────────────────────────────────────────────
@@ -174,15 +132,19 @@ function ReferenceAccountsSection() {
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [showToken, setShowToken] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
-  const [connecting, setConnecting] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
   const [form, setForm] = useState({
     name: '',
     persona: PERSONAS[0].value,
     tone: 'friendly',
     targetAudience: 'キャリアに不安のある高卒20代',
     postTopics: '転職ノウハウ、キャリア相談、仕事の悩み',
+    accessToken: '',
+    threadsUserId: '',
     clientId: '',
     clientSecret: '',
   })
@@ -191,15 +153,37 @@ export default function AccountsPage() {
     fetch('/api/accounts').then(r => r.json()).then(setAccounts).catch(() => {})
   }, [])
 
-  async function handleConnect() {
+  function resetForm() {
+    setForm({
+      name: '',
+      persona: PERSONAS[0].value,
+      tone: 'friendly',
+      targetAudience: 'キャリアに不安のある高卒20代',
+      postTopics: '転職ノウハウ、キャリア相談、仕事の悩み',
+      accessToken: '',
+      threadsUserId: '',
+      clientId: '',
+      clientSecret: '',
+    })
+    setFormError('')
+    setShowToken(false)
+    setShowSecret(false)
+  }
+
+  function closeForm() {
+    if (submitting) return // 送信中は閉じない
+    setShowForm(false)
+    resetForm()
+  }
+
+  async function handleSubmit() {
     setFormError('')
     if (!form.name.trim()) { setFormError('アカウント名を入力してください'); return }
-    if (!form.clientId.trim()) { setFormError('Client IDを入力してください'); return }
-    if (!form.clientSecret.trim()) { setFormError('Client Secretを入力してください'); return }
+    if (!form.accessToken.trim()) { setFormError('Access Tokenを入力してください'); return }
 
-    setConnecting(true)
+    setSubmitting(true)
     try {
-      const res = await fetch('/api/auth/threads/connect', {
+      const res = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -208,20 +192,26 @@ export default function AccountsPage() {
           tone: form.tone,
           targetAudience: form.targetAudience,
           postTopics: form.postTopics,
+          accessToken: form.accessToken,
+          threadsUserId: form.threadsUserId,
           clientId: form.clientId,
           clientSecret: form.clientSecret,
         }),
       })
-      const data = await res.json() as { url?: string; error?: string }
-      if (!res.ok || !data.url) {
-        setFormError(data.error ?? '接続に失敗しました')
+      const data = await res.json() as Account & { error?: string }
+      if (!res.ok || data.error) {
+        setFormError(data.error ?? 'アカウントの作成に失敗しました')
         return
       }
-      window.location.href = data.url
+      setAccounts(prev => [data, ...prev])
+      setShowForm(false)
+      resetForm()
+      setSuccessMsg(`アカウント「${data.name}」を追加しました`)
+      setTimeout(() => setSuccessMsg(''), 4000)
     } catch {
-      setFormError('接続に失敗しました')
+      setFormError('アカウントの作成に失敗しました')
     } finally {
-      setConnecting(false)
+      setSubmitting(false)
     }
   }
 
@@ -241,10 +231,11 @@ export default function AccountsPage() {
         </Button>
       </div>
 
-      {/* Toast */}
-      <Suspense>
-        <OAuthToast />
-      </Suspense>
+      {successMsg && (
+        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 ring-1 ring-green-200">
+          {successMsg}
+        </div>
+      )}
 
       {/* 参考アカウント */}
       <ReferenceAccountsSection />
@@ -302,7 +293,7 @@ export default function AccountsPage() {
       {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowForm(false)} />
+          <div className="absolute inset-0 bg-black/40" onClick={closeForm} />
           <div
             className="relative w-full max-w-lg rounded-xl bg-white"
             style={{
@@ -315,8 +306,9 @@ export default function AccountsPage() {
                 新しいアカウントを追加
               </h2>
               <button
-                onClick={() => setShowForm(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                onClick={closeForm}
+                disabled={submitting}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -360,77 +352,104 @@ export default function AccountsPage() {
                   />
                 </div>
 
-                {/* Meta App credentials */}
+                {/* Threads API credentials */}
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Meta App 設定</p>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Threads API 設定</p>
+
                   <div>
-                    <FieldLabel>Client ID</FieldLabel>
-                    <Input
-                      value={form.clientId}
-                      onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
-                      placeholder="例：1234567890123456"
-                    />
-                  </div>
-                  <div>
-                    <FieldLabel>Client Secret</FieldLabel>
+                    <FieldLabel>Access Token</FieldLabel>
                     <div className="relative">
                       <Input
-                        type={showSecret ? 'text' : 'password'}
-                        value={form.clientSecret}
-                        onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
-                        placeholder="例：abcdef1234567890abcdef1234567890"
+                        type={showToken ? 'text' : 'password'}
+                        value={form.accessToken}
+                        onChange={e => setForm(f => ({ ...f, accessToken: e.target.value }))}
+                        placeholder="THXX..."
                         className="pr-10"
                       />
                       <button
                         type="button"
-                        onClick={() => setShowSecret(v => !v)}
+                        onClick={() => setShowToken(v => !v)}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
-                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      Meta for Developers の Graph API Explorer または長期トークン
+                    </p>
                   </div>
-                  <p className="text-[11px] text-gray-400 leading-relaxed">
-                    <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="text-[#00A3BF] underline underline-offset-2">Meta for Developers</a>
-                    でアプリを作成し、Threads APIを有効化してください。
-                  </p>
+
+                  <div>
+                    <FieldLabel optional>Threads User ID</FieldLabel>
+                    <Input
+                      value={form.threadsUserId}
+                      onChange={e => setForm(f => ({ ...f, threadsUserId: e.target.value }))}
+                      placeholder="空欄ならトークンから自動取得"
+                    />
+                  </div>
+
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                      Client ID / Secret（任意・トークン更新用）
+                    </summary>
+                    <div className="mt-2 space-y-2">
+                      <div>
+                        <FieldLabel optional>Client ID</FieldLabel>
+                        <Input
+                          value={form.clientId}
+                          onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
+                          placeholder="例：1234567890123456"
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel optional>Client Secret</FieldLabel>
+                        <div className="relative">
+                          <Input
+                            type={showSecret ? 'text' : 'password'}
+                            value={form.clientSecret}
+                            onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
+                            placeholder="例：abcdef1234567890..."
+                            className="pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowSecret(v => !v)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
                 </div>
 
                 {formError && (
-                  <p className="flex items-center gap-1.5 text-xs text-red-500">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    {formError}
+                  <p className="flex items-start gap-1.5 text-xs text-red-500">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                    <span className="break-words">{formError}</span>
                   </p>
                 )}
 
-                <div className="border-t border-gray-100 pt-2">
-                  <p className="mb-3 text-xs text-gray-400">
-                    「Threadsで連携」を押すとMetaの認可画面に移動します。認可後、自動でアカウントが作成されます。
-                  </p>
-                </div>
-
-                <div className="flex gap-3">
+                <div className="flex gap-3 border-t border-gray-100 pt-4">
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={() => setShowForm(false)}
+                    onClick={closeForm}
                     className="flex-1"
-                    disabled={connecting}
+                    disabled={submitting}
                   >
                     キャンセル
                   </Button>
                   <Button
                     type="button"
-                    onClick={handleConnect}
-                    disabled={!form.name.trim() || connecting}
-                    isLoading={connecting}
-                    loadingText="接続中..."
-                    className="flex-1 gap-2"
+                    onClick={handleSubmit}
+                    disabled={!form.name.trim() || !form.accessToken.trim() || submitting}
+                    isLoading={submitting}
+                    loadingText="保存中..."
+                    className="flex-1"
                   >
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748z"/>
-                    </svg>
-                    Threadsで連携
+                    アカウントを追加
                   </Button>
                 </div>
               </div>

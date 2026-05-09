@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 
+// 機密カラムは クライアントへ返さない（GET / POST レスポンス共通）
+const PUBLIC_ACCOUNT_COLUMNS = [
+  'id',
+  'user_id',
+  'platform',
+  'name',
+  'persona',
+  'tone',
+  'target_audience',
+  'post_topics',
+  'token_expires_at',
+  'threads_user_id',
+  'is_active',
+  'created_at',
+  'updated_at',
+].join(',')
+
+const MAX_NAME = 100
+const MAX_PERSONA = 200
+const MAX_AUDIENCE = 200
+const MAX_TOKEN = 4096
+const MAX_USER_ID = 64
+const MAX_CLIENT_ID = 100
+const MAX_CLIENT_SECRET = 200
+const MAX_TOPICS = 20
+const MAX_TOPIC_LEN = 100
+
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient()
@@ -9,16 +36,50 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('accounts')
-      .select('*')
+      .select(PUBLIC_ACCOUNT_COLUMNS)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) throw error
     return NextResponse.json(data)
   } catch (e) {
-    const message = e instanceof Error ? e.message : '取得に失敗しました'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[accounts GET]', e instanceof Error ? e.message : 'unknown')
+    return NextResponse.json({ error: '取得に失敗しました' }, { status: 500 })
   }
+}
+
+async function fetchThreadsUserId(accessToken: string): Promise<string> {
+  const url = 'https://graph.threads.net/v1.0/me?fields=id'
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    // エラー本文はログにのみ残し、クライアントへは返さない（トークン漏洩対策）
+    const errText = await res.text().catch(() => '')
+    console.error('[Threads /me]', res.status, errText)
+    throw new Error(`Threads API: ユーザーIDの取得に失敗しました (HTTP ${res.status})`)
+  }
+  const data = await res.json() as { id?: string }
+  if (!data.id) throw new Error('Threads API: ユーザーIDが取得できませんでした')
+  return data.id
+}
+
+interface CreateAccountBody {
+  name?: unknown
+  persona?: unknown
+  tone?: unknown
+  targetAudience?: unknown
+  postTopics?: unknown
+  accessToken?: unknown
+  threadsUserId?: unknown
+  clientId?: unknown
+  clientSecret?: unknown
+}
+
+function sanitizeStr(v: unknown, maxLen: number): string {
+  if (typeof v !== 'string') return ''
+  const trimmed = v.trim()
+  return trimmed.slice(0, maxLen)
 }
 
 export async function POST(req: NextRequest) {
@@ -27,52 +88,70 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const body = await req.json() as {
-      platform?: 'threads' | 'tiktok' | 'instagram' | 'x'
-      name: string
-      persona: string
-      tone: string
-      targetAudience: string
-      postTopics: string[] | string
-      accessToken?: string
-      threadsUserId?: string
-      heygenAvatarId?: string
-      heygenVoiceId?: string
+    const body = await req.json() as CreateAccountBody
+
+    const name = sanitizeStr(body.name, MAX_NAME)
+    const accessTokenRaw = typeof body.accessToken === 'string' ? body.accessToken.trim() : ''
+
+    if (!name) {
+      return NextResponse.json({ error: 'アカウント名は必須です' }, { status: 400 })
+    }
+    if (!accessTokenRaw) {
+      return NextResponse.json({ error: 'Access Token は必須です' }, { status: 400 })
+    }
+    if (accessTokenRaw.length > MAX_TOKEN) {
+      return NextResponse.json({ error: 'Access Token が長すぎます' }, { status: 400 })
     }
 
-    const platform = body.platform ?? 'threads'
+    const persona = sanitizeStr(body.persona, MAX_PERSONA)
+    const tone = sanitizeStr(body.tone, 50) || 'friendly'
+    const targetAudience = sanitizeStr(body.targetAudience, MAX_AUDIENCE)
+    const clientId = sanitizeStr(body.clientId, MAX_CLIENT_ID) || null
+    const clientSecret = sanitizeStr(body.clientSecret, MAX_CLIENT_SECRET) || null
 
-    if (!body.name?.trim()) {
-      return NextResponse.json({ error: 'name は必須です' }, { status: 400 })
+    let threadsUserId = sanitizeStr(body.threadsUserId, MAX_USER_ID)
+
+    // post_topics: array | string | undefined
+    let topicArray: string[]
+    if (Array.isArray(body.postTopics)) {
+      topicArray = body.postTopics.filter((s): s is string => typeof s === 'string')
+    } else if (typeof body.postTopics === 'string') {
+      topicArray = body.postTopics.split('、')
+    } else {
+      topicArray = []
     }
+    const postTopics = topicArray
+      .map(s => s.trim().slice(0, MAX_TOPIC_LEN))
+      .filter(Boolean)
+      .slice(0, MAX_TOPICS)
 
-    if (platform === 'tiktok' && (!body.heygenAvatarId?.trim() || !body.heygenVoiceId?.trim())) {
-      return NextResponse.json(
-        { error: 'TikTokアカウントには HeyGen avatar_id と voice_id が必要です' },
-        { status: 400 },
-      )
+    // user_id 未指定時は Threads API から自動取得
+    if (!threadsUserId) {
+      try {
+        threadsUserId = await fetchThreadsUserId(accessTokenRaw)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Threads APIエラー'
+        return NextResponse.json({ error: msg }, { status: 400 })
+      }
     }
-
-    const postTopics = Array.isArray(body.postTopics)
-      ? body.postTopics
-      : (body.postTopics ?? '').split('、').map(s => s.trim()).filter(Boolean)
 
     const { data, error } = await supabase
       .from('accounts')
       .insert({
         user_id: user.id,
-        platform,
-        name: body.name,
-        persona: body.persona,
-        tone: body.tone,
-        target_audience: body.targetAudience,
+        platform: 'threads',
+        name,
+        persona,
+        tone,
+        target_audience: targetAudience,
         post_topics: postTopics,
-        access_token: body.accessToken ?? null,
-        threads_user_id: body.threadsUserId ?? null,
-        heygen_avatar_id: body.heygenAvatarId ?? null,
-        heygen_voice_id: body.heygenVoiceId ?? null,
+        access_token: accessTokenRaw,
+        threads_user_id: threadsUserId,
+        threads_client_id: clientId,
+        threads_client_secret: clientSecret,
+        is_active: true,
       })
-      .select()
+      .select(PUBLIC_ACCOUNT_COLUMNS)
       .single()
 
     if (error) throw error
