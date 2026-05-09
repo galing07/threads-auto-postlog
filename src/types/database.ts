@@ -1,4 +1,4 @@
-export type Platform = 'threads' | 'tiktok' | 'instagram' | 'x' | 'x_thread'
+export type Platform = 'threads' | 'instagram' | 'x' | 'x_thread'
 export type PostStatus = 'draft' | 'scheduled' | 'posted' | 'failed'
 export type LogAction = 'generated' | 'approved' | 'scheduled' | 'posted' | 'failed'
 
@@ -16,8 +16,6 @@ export interface Account {
   threads_user_id: string | null
   threads_client_id: string | null
   threads_client_secret: string | null
-  heygen_avatar_id: string | null
-  heygen_voice_id: string | null
   x_user_id: string | null
   x_refresh_token: string | null
   is_active: boolean

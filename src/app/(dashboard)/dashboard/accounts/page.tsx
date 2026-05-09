@@ -369,59 +369,40 @@ export default function AccountsPage() {
 
                 {/* Meta App credentials */}
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Meta App 設定</p>
-                    {defaultAppId && hasDefaultSecret && (
-                      <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
-                        設定済み
-                      </span>
-                    )}
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Meta App 設定</p>
+                  <div>
+                    <FieldLabel optional>Client ID</FieldLabel>
+                    <Input
+                      value={form.clientId}
+                      onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
+                      placeholder={defaultAppId ? `デフォルト: ${defaultAppId}` : '例：1234567890123456'}
+                    />
                   </div>
-                  {defaultAppId && hasDefaultSecret ? (
-                    <p className="text-xs text-gray-500">
-                      App ID <span className="font-mono text-gray-700">{defaultAppId}</span> が設定されています。
-                      このまま連携できます。
-                    </p>
-                  ) : (
-                    <>
-                      <div>
-                        <FieldLabel>Client ID</FieldLabel>
-                        <Input
-                          value={form.clientId || defaultAppId}
-                          onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
-                          placeholder="例：1234567890123456"
-                        />
-                      </div>
-                      <div>
-                        <FieldLabel>Client Secret</FieldLabel>
-                        <div className="relative">
-                          <Input
-                            type={showSecret ? 'text' : 'password'}
-                            value={form.clientSecret}
-                            onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
-                            placeholder="例：abcdef1234567890abcdef1234567890"
-                            className="pr-10"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowSecret(v => !v)}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                          >
-                            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-gray-400 leading-relaxed">
-                        <a
-                          href="https://developers.facebook.com/apps"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[#00A3BF] underline underline-offset-2"
-                        >Meta for Developers</a>
-                        {' '}でアプリを作成し、Threads APIを有効化してください。
-                      </p>
-                    </>
-                  )}
+                  <div>
+                    <FieldLabel optional>Client Secret</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        type={showSecret ? 'text' : 'password'}
+                        value={form.clientSecret}
+                        onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
+                        placeholder={hasDefaultSecret ? 'デフォルト値が設定されています' : '例：abcdef1234567890abcdef1234567890'}
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret(v => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    {defaultAppId && hasDefaultSecret
+                      ? '空のままでもデフォルトAppで連携できます。別のMeta Appを使う場合のみ入力してください。'
+                      : <><a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="text-[#00A3BF] underline underline-offset-2">Meta for Developers</a>でアプリを作成し、Threads APIを有効化してください。</>
+                    }
+                  </p>
                 </div>
 
                 {formError && (

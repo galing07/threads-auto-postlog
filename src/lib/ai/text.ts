@@ -14,7 +14,6 @@ interface GenerateTextOptions {
   maxLength?: number
   referencePost?: string
   referenceAccountName?: string
-  platform?: string
 }
 
 const postTypeGuide: Record<PostType, string> = {
@@ -155,15 +154,9 @@ export async function generateThreadsText({
   maxLength = 500,
   referencePost,
   referenceAccountName,
-  platform,
 }: GenerateTextOptions): Promise<GeneratedText> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured')
-
-  // TikTok向け：30秒の話し言葉スクリプト（約180字）
-  if (platform === 'tiktok') {
-    return generateTikTokScript({ apiKey, account, theme, recentSummaries })
-  }
 
   const persona = account.persona ?? '転職ノウハウ発信者'
   const tone = account.tone ?? 'friendly'
@@ -250,77 +243,3 @@ ${recentSummaries.length > 0 ? '\n※ 過去投稿と切り口・主張・構成
   return parsed
 }
 
-// TikTok向け：30秒の話し言葉スクリプト（約180字 = 6字/秒 × 30秒）
-async function generateTikTokScript({
-  apiKey,
-  account,
-  theme,
-  recentSummaries,
-}: {
-  apiKey: string
-  account: Account
-  theme: string
-  recentSummaries: string[]
-}): Promise<GeneratedText> {
-  const persona = account.persona ?? '転職ノウハウ発信者'
-  const audience = account.target_audience ?? 'キャリアに不安のある高卒20代'
-
-  const summariesToUse = recentSummaries.slice(0, 5)
-  const pastInstruction = summariesToUse.length > 0
-    ? `\n\n【過去動画（同じ切り口・主張を避けること）】\n${summariesToUse.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
-    : ''
-
-  const systemPrompt = `あなたはTikTok向け短尺動画の台本ライター。
-${persona}として${audience}に向けて話しかける30秒の台本を作る。
-
-【必須条件】
-- 180字以内（6字/秒 × 30秒）
-- 読み上げる言葉そのまま書く（話し言葉）
-- ハッシュタグ・絵文字・記号は一切使わない（音声合成が読めないため）
-- 冒頭3秒で「え、それ知りたい」と思わせる一言から入る
-- 最後は視聴者への問いかけか「続きはプロフから」で締める
-- 体言止め・箇条書き禁止（自然な話し言葉のみ）${pastInstruction}`
-
-  const userPrompt = `以下のテーマで30秒TikTok台本を1つ作成してください。
-
-テーマ：${theme}
-
-必ず以下のJSON形式で返してください：
-{
-  "content": "台本本文（話し言葉のみ、180字以内）",
-  "summary": "この動画の内容を30〜50字で要約（次回の被り防止用）"
-}`
-
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'https://sns-auto-post.vercel.app',
-      'X-Title': 'SNS Auto Post',
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      max_tokens: 400,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    }),
-  })
-
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`OpenRouter error ${res.status}: ${err}`)
-  }
-
-  const json = await res.json() as {
-    choices: Array<{ message: { content: string } }>
-  }
-  const text = json.choices[0]?.message?.content ?? ''
-
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('AI応答のパースに失敗しました')
-
-  return JSON.parse(jsonMatch[0]) as GeneratedText
-}
