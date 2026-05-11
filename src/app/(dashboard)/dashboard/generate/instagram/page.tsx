@@ -50,7 +50,6 @@ export default function InstagramGeneratePage() {
   const [imageLoading, setImageLoading] = useState(false)
   const [imageEditPrompt, setImageEditPrompt] = useState('')
   const [imageEditing, setImageEditing] = useState(false)
-  const [scheduledAt, setScheduledAt] = useState('')
   const [savedPost, setSavedPost] = useState<Post | null>(null)
 
   const [referenceAccounts, setReferenceAccounts] = useState<ReferenceAccount[]>([])
@@ -206,7 +205,6 @@ export default function InstagramGeneratePage() {
           textContent: generatedText,
           imageUrl: imageUrl || undefined,
           theme,
-          scheduledAt: scheduledAt || undefined,
           summary: generatedSummary || undefined,
         }),
       })
@@ -234,7 +232,6 @@ export default function InstagramGeneratePage() {
     setGeneratedSummary('')
     setImageUrl('')
     setImageEditPrompt('')
-    setScheduledAt('')
     setSavedPost(null)
     setThemeSuggestions([])
     setReferencePost('')
@@ -254,9 +251,7 @@ export default function InstagramGeneratePage() {
             {savedPost?.status === 'posted' ? '投稿しました！' : '保存しました！'}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            {savedPost?.status === 'scheduled'
-              ? `${scheduledAt} に予約投稿します`
-              : savedPost?.status === 'posted'
+            {savedPost?.status === 'posted'
               ? 'Instagramに投稿されました'
               : '下書きとして保存されました'}
           </p>
@@ -592,30 +587,16 @@ export default function InstagramGeneratePage() {
             </div>
           </Card>
 
-          {/* 予約投稿 */}
-          {!isDemoMode && (
-            <Card className="space-y-2">
-              <SectionLabel>予約投稿</SectionLabel>
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={e => setScheduledAt(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20"
-              />
-              {!scheduledAt && <p className="text-xs text-gray-400">空白の場合は下書き保存になります</p>}
-            </Card>
-          )}
-
           {/* アクション */}
           <div className="flex gap-3">
             <Button variant="secondary" onClick={() => handleSave(false)} disabled={loading || captionOver} className="flex-1 gap-2">
               <Save className="h-4 w-4" />
-              {isDemoMode ? '下書き保存' : scheduledAt ? '予約保存' : '下書き保存'}
+              下書き保存
             </Button>
             {!isDemoMode && (
               <Button
                 onClick={() => handleSave(true)}
-                disabled={loading || !!scheduledAt || !imageUrl || captionOver}
+                disabled={loading || !imageUrl || captionOver}
                 isLoading={loading}
                 loadingText="投稿中..."
                 className="flex-1 gap-2 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-orange-400 hover:opacity-90"

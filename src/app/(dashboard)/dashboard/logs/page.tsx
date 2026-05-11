@@ -1,16 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CheckCircle, Clock, AlertCircle, PenLine, Send, FileText, ChevronDown, ChevronUp, ImageIcon, User, RefreshCw } from 'lucide-react'
+import { CheckCircle, AlertCircle, PenLine, Send, FileText, ChevronDown, ChevronUp, ImageIcon, User, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { cx } from '@/lib/utils'
 import type { PostWithAccount } from '@/types/database'
 
 const STATUS_CONFIG = {
-  draft:     { label: '下書き',   cls: 'bg-gray-100 text-gray-600',       Icon: PenLine },
-  scheduled: { label: '予約済み', cls: 'bg-[#E9F7F9] text-[#006F83]',     Icon: Clock },
-  posted:    { label: '投稿済み', cls: 'bg-green-50 text-green-700',       Icon: CheckCircle },
-  failed:    { label: 'エラー',   cls: 'bg-red-50 text-red-600',           Icon: AlertCircle },
+  draft:  { label: '下書き',   cls: 'bg-gray-100 text-gray-600',  Icon: PenLine },
+  posted: { label: '投稿済み', cls: 'bg-green-50 text-green-700', Icon: CheckCircle },
+  failed: { label: 'エラー',   cls: 'bg-red-50 text-red-600',     Icon: AlertCircle },
 }
 
 function formatDate(iso: string) {
@@ -113,7 +112,7 @@ function PostCard({ post, onPublish }: { post: PostWithAccount; onPublish: (id: 
               <span className="truncate text-[11px] text-gray-400">#{post.theme}</span>
             )}
             <span className="ml-auto text-[11px] text-gray-400">
-              {formatDate(post.scheduled_at ?? post.created_at)}
+              {formatDate(post.created_at)}
             </span>
           </div>
 
@@ -157,7 +156,7 @@ function PostCard({ post, onPublish }: { post: PostWithAccount; onPublish: (id: 
 export default function LogsPage() {
   const [posts, setPosts] = useState<PostWithAccount[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'draft' | 'scheduled' | 'posted' | 'failed'>('all')
+  const [filter, setFilter] = useState<'all' | 'draft' | 'posted' | 'failed'>('all')
 
   async function load() {
     setLoading(true)
@@ -182,11 +181,10 @@ export default function LogsPage() {
   const filtered = filter === 'all' ? posts : posts.filter(p => p.status === filter)
 
   const counts = {
-    all:       posts.length,
-    draft:     posts.filter(p => p.status === 'draft').length,
-    scheduled: posts.filter(p => p.status === 'scheduled').length,
-    posted:    posts.filter(p => p.status === 'posted').length,
-    failed:    posts.filter(p => p.status === 'failed').length,
+    all:    posts.length,
+    draft:  posts.filter(p => p.status === 'draft').length,
+    posted: posts.filter(p => p.status === 'posted').length,
+    failed: posts.filter(p => p.status === 'failed').length,
   }
 
   return (
@@ -209,7 +207,7 @@ export default function LogsPage() {
 
       {/* フィルタータブ */}
       <div className="mb-4 flex gap-1 rounded-lg bg-gray-100 p-1">
-        {(['all', 'draft', 'scheduled', 'posted', 'failed'] as const).map(f => (
+        {(['all', 'draft', 'posted', 'failed'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}

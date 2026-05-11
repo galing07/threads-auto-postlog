@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  FileText, Send, Trash2, Clock, User, ImageIcon, RefreshCw,
+  FileText, Send, Trash2, User, ImageIcon, RefreshCw,
   CheckCircle, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -13,7 +13,6 @@ import type { Post } from '@/types/database'
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   draft:     { label: '下書き',   cls: 'bg-gray-100 text-gray-600' },
-  scheduled: { label: '予約済み', cls: 'bg-[#E9F7F9] text-[#006F83]' },
   posted:    { label: '投稿済み', cls: 'bg-green-50 text-green-700' },
   failed:    { label: 'エラー',   cls: 'bg-red-50 text-red-600' },
 }
@@ -123,10 +122,7 @@ function DraftCard({
               <span className="truncate text-[11px] text-gray-400">#{post.theme}</span>
             )}
             <span className="ml-auto text-[11px] text-gray-400">
-              {post.scheduled_at
-                ? <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDate(post.scheduled_at)}</span>
-                : formatDate(post.created_at)
-              }
+              {formatDate(post.created_at)}
             </span>
           </div>
 
@@ -197,7 +193,7 @@ export default function DraftsPage() {
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'draft' | 'scheduled' | 'posted'>('all')
+  const [filter, setFilter] = useState<'all' | 'draft' | 'posted' | 'failed'>('all')
 
   async function load() {
     setLoading(true)
@@ -242,10 +238,10 @@ export default function DraftsPage() {
   const filtered = filter === 'all' ? posts : posts.filter(p => p.status === filter)
 
   const counts = {
-    all:       posts.length,
-    draft:     posts.filter(p => p.status === 'draft').length,
-    scheduled: posts.filter(p => p.status === 'scheduled').length,
-    posted:    posts.filter(p => p.status === 'posted').length,
+    all:    posts.length,
+    draft:  posts.filter(p => p.status === 'draft').length,
+    posted: posts.filter(p => p.status === 'posted').length,
+    failed: posts.filter(p => p.status === 'failed').length,
   }
 
   return (
@@ -269,7 +265,7 @@ export default function DraftsPage() {
 
       {/* Filter tabs */}
       <div className="mb-4 flex gap-1 rounded-lg bg-gray-100 p-1">
-        {(['all', 'draft', 'scheduled', 'posted'] as const).map(f => (
+        {(['all', 'draft', 'posted', 'failed'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}

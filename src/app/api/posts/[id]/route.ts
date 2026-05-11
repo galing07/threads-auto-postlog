@@ -11,13 +11,12 @@ export async function PATCH(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const body = await req.json() as { status?: string; scheduledAt?: string | null }
+    const body = await req.json() as { status?: string }
 
     const { data, error } = await supabase
       .from('posts')
       .update({
         ...(body.status && { status: body.status }),
-        ...('scheduledAt' in body && { scheduled_at: body.scheduledAt }),
       })
       .eq('id', id)
       .select()

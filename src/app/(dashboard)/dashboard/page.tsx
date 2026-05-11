@@ -2,34 +2,31 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { PenLine, CheckCircle, Clock, AlertCircle, FileText, ArrowRight } from 'lucide-react'
+import { PenLine, CheckCircle, AlertCircle, FileText, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { Post } from '@/types/database'
 
 interface Stats {
   draft: number
-  scheduled: number
   posted: number
   failed: number
 }
 
 const statCards = [
   { key: 'draft' as const,     label: '下書き',   color: 'text-slate-700',  icon: PenLine },
-  { key: 'scheduled' as const, label: '予約済み',  color: 'text-[#006F83]',  icon: Clock },
   { key: 'posted' as const,    label: '投稿済み',  color: 'text-green-700',  icon: CheckCircle },
   { key: 'failed' as const,    label: 'エラー',    color: 'text-red-600',    icon: AlertCircle },
 ]
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   draft:     { label: '下書き',   cls: 'bg-gray-100 text-gray-600' },
-  scheduled: { label: '予約済み', cls: 'bg-[#E9F7F9] text-[#006F83]' },
   posted:    { label: '投稿済み', cls: 'bg-green-50 text-green-700' },
   failed:    { label: 'エラー',   cls: 'bg-red-50 text-red-600' },
 }
 
 export default function DashboardPage() {
   const [recentPosts, setRecentPosts] = useState<Post[]>([])
-  const [stats, setStats] = useState<Stats>({ draft: 0, scheduled: 0, posted: 0, failed: 0 })
+  const [stats, setStats] = useState<Stats>({ draft: 0, posted: 0, failed: 0 })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -52,7 +49,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI cards */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-3 gap-3">
         {statCards.map(({ key, label, color, icon: Icon }) => (
           <div
             key={key}

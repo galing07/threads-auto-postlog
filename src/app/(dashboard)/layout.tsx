@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   PenLine,
-  CalendarClock,
   Users,
   ScrollText,
   LayoutDashboard,
@@ -19,7 +18,6 @@ const navItems = [
   { href: '/dashboard', label: 'ホーム', icon: LayoutDashboard },
   { href: '/dashboard/generate', label: '投稿生成', icon: PenLine },
   { href: '/dashboard/drafts', label: '下書き', icon: FileText },
-  { href: '/dashboard/schedule', label: 'スケジュール', icon: CalendarClock },
   { href: '/dashboard/accounts', label: 'アカウント', icon: Users },
   { href: '/dashboard/logs', label: 'ログ', icon: ScrollText },
 ]

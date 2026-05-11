@@ -1,6 +1,6 @@
 export type Platform = 'threads' | 'instagram' | 'x' | 'x_thread'
-export type PostStatus = 'draft' | 'scheduled' | 'posted' | 'failed'
-export type LogAction = 'generated' | 'approved' | 'scheduled' | 'posted' | 'failed'
+export type PostStatus = 'draft' | 'posted' | 'failed'
+export type LogAction = 'generated' | 'approved' | 'posted' | 'failed'
 
 export interface Account {
   id: string
@@ -34,13 +34,10 @@ export interface Post {
   video_url: string | null
   theme: string | null
   status: PostStatus
-  scheduled_at: string | null
   posted_at: string | null
   platform_post_id: string | null
   error_message: string | null
   summary: string | null
-  attempt_count: number
-  next_retry_at: string | null
   created_at: string
   updated_at: string
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 
-type StatusKey = 'draft' | 'scheduled' | 'posted' | 'failed'
+type StatusKey = 'draft' | 'posted' | 'failed'
 
 export async function GET() {
   try {
@@ -17,10 +17,10 @@ export async function GET() {
 
     if (error) throw error
 
-    const counts: Record<StatusKey, number> = { draft: 0, scheduled: 0, posted: 0, failed: 0 }
+    const counts: Record<StatusKey, number> = { draft: 0, posted: 0, failed: 0 }
     for (const row of data ?? []) {
       const s = row.status as string
-      if (s === 'draft' || s === 'scheduled' || s === 'posted' || s === 'failed') {
+      if (s === 'draft' || s === 'posted' || s === 'failed') {
         counts[s]++
       }
     }

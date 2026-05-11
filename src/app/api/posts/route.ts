@@ -46,22 +46,20 @@ export async function POST(req: NextRequest) {
       imagePrompt?: string
       videoUrl?: string
       theme?: string
-      scheduledAt?: string
       summary?: string
     }
 
     const { data, error } = await supabase
       .from('posts')
       .insert({
-        user_id: user.id,                        // 常にセット（デモ投稿の所有者追跡）
-        account_id: body.accountId ?? null,      // アカウントなしはnull
+        user_id: user.id,
+        account_id: body.accountId ?? null,
         text_content: body.textContent,
         image_url: body.imageUrl ?? null,
         image_prompt: body.imagePrompt ?? null,
         video_url: body.videoUrl ?? null,
         theme: body.theme ?? null,
-        scheduled_at: body.scheduledAt ?? null,
-        status: body.scheduledAt ? 'scheduled' : 'draft',
+        status: 'draft',
         summary: body.summary ?? null,
       })
       .select()
@@ -71,8 +69,8 @@ export async function POST(req: NextRequest) {
 
     await supabase.from('post_logs').insert({
       post_id: data.id,
-      action: body.scheduledAt ? 'scheduled' : 'generated',
-      message: body.scheduledAt ? `${body.scheduledAt} に予約投稿` : '下書き保存',
+      action: 'generated',
+      message: '下書き保存',
     })
 
     return NextResponse.json(data)

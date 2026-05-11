@@ -65,7 +65,6 @@ export default function XGeneratePage() {
   const [threadParts, setThreadParts] = useState<string[]>([''])
 
   const [generatedSummary, setGeneratedSummary] = useState('')
-  const [scheduledAt, setScheduledAt] = useState('')
   const [savedPost, setSavedPost] = useState<Post | null>(null)
 
   useEffect(() => {
@@ -171,7 +170,6 @@ export default function XGeneratePage() {
           accountId: selectedAccount || undefined,
           textContent,
           theme,
-          scheduledAt: scheduledAt || undefined,
           summary: generatedSummary || undefined,
         }),
       })
@@ -196,7 +194,6 @@ export default function XGeneratePage() {
     setGeneratedText('')
     setThreadParts([''])
     setGeneratedSummary('')
-    setScheduledAt('')
     setSavedPost(null)
     setThemeSuggestions([])
   }
@@ -212,9 +209,7 @@ export default function XGeneratePage() {
             {savedPost?.status === 'posted' ? '投稿しました！' : '保存しました！'}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            {savedPost?.status === 'scheduled'
-              ? `${scheduledAt} に予約投稿します`
-              : savedPost?.status === 'posted'
+            {savedPost?.status === 'posted'
               ? 'Xに投稿されました'
               : '下書きとして保存されました'}
           </p>
@@ -504,30 +499,16 @@ export default function XGeneratePage() {
             </div>
           )}
 
-          {/* 予約投稿 */}
-          {!isDemoMode && (
-            <Card className="space-y-2">
-              <SectionLabel>予約投稿</SectionLabel>
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={e => setScheduledAt(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-gray-700 focus:ring-2 focus:ring-gray-700/10"
-              />
-              {!scheduledAt && <p className="text-xs text-gray-400">空白の場合は下書き保存になります</p>}
-            </Card>
-          )}
-
           {/* アクション */}
           <div className="flex gap-3">
             <Button variant="secondary" onClick={() => handleSave(false)} disabled={loading} className="flex-1 gap-2">
               <Save className="h-4 w-4" />
-              {isDemoMode ? '下書き保存' : scheduledAt ? '予約保存' : '下書き保存'}
+              下書き保存
             </Button>
             {!isDemoMode && (
               <Button
                 onClick={() => handleSave(true)}
-                disabled={loading || !!scheduledAt}
+                disabled={loading}
                 isLoading={loading}
                 loadingText="投稿中..."
                 className="flex-1 gap-2"
