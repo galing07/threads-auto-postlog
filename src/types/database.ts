@@ -39,6 +39,8 @@ export interface Post {
   platform_post_id: string | null
   error_message: string | null
   summary: string | null
+  attempt_count: number
+  next_retry_at: string | null
   created_at: string
   updated_at: string
 }

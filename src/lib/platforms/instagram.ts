@@ -61,6 +61,11 @@ export async function createInstagramPost(
   if (!imageUrl) {
     throw new Error('Instagramは画像が必須です')
   }
+  // Instagram の Graph API はサーバ側から imageUrl を fetch するため
+  // https のみ受け付け、http や file:/data: などは拒否（SSRF誘発の縮小）
+  if (!/^https:\/\//i.test(imageUrl)) {
+    throw new Error('Instagram の画像URLは https:// で始まる必要があります')
+  }
 
   // Step 1: メディアコンテナ作成
   const container = await igRequest<{ id: string }>(

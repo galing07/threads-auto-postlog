@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { generateThreadsText } from '@/lib/ai/text'
+import { generateSNSText } from '@/lib/ai/text'
 import type { Account } from '@/types/database'
 
 // アカウントなし時のデフォルト設定
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
     }
 
-    const result = await generateThreadsText({ account, theme, postType, recentSummaries, referencePost, referenceAccountName })
+    const result = await generateSNSText({ account, theme, postType, recentSummaries, referencePost, referenceAccountName })
     return NextResponse.json(result)
   } catch (e) {
     const message = e instanceof Error ? e.message : '生成に失敗しました'

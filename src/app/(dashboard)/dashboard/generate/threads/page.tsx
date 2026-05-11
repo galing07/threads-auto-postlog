@@ -60,12 +60,17 @@ export default function ThreadsGeneratePage() {
     Promise.all([
       fetch('/api/accounts').then(r => r.json()) as Promise<Account[]>,
       fetch('/api/reference-accounts').then(r => r.json()) as Promise<ReferenceAccount[]>,
-    ]).then(([accs, refs]) => {
-      const threadsAccounts = accs.filter(a => a.platform === 'threads' || !a.platform)
-      setAccounts(threadsAccounts)
-      if (threadsAccounts.length > 0) setSelectedAccount(threadsAccounts[0].id)
-      setReferenceAccounts(Array.isArray(refs) ? refs : [])
-    })
+    ])
+      .then(([accs, refs]) => {
+        const threadsAccounts = (Array.isArray(accs) ? accs : []).filter(a => a.platform === 'threads' || !a.platform)
+        setAccounts(threadsAccounts)
+        if (threadsAccounts.length > 0) setSelectedAccount(threadsAccounts[0].id)
+        setReferenceAccounts(Array.isArray(refs) ? refs : [])
+      })
+      .catch(e => {
+        console.error('[generate/threads] initial load failed', e)
+        alert('アカウント情報の取得に失敗しました。再読み込みしてください。')
+      })
   }, [])
 
   const isDemoMode = !selectedAccount

@@ -146,7 +146,7 @@ interface GeneratedText {
   summary: string
 }
 
-export async function generateThreadsText({
+export async function generateSNSText({
   account,
   theme,
   postType,

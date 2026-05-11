@@ -171,6 +171,13 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: msg }, { status: 400 })
         }
       }
+      // IG Business Account ID は数値文字列のみ
+      if (instagramUserId && !/^\d+$/.test(instagramUserId)) {
+        return NextResponse.json(
+          { error: 'Instagram Business Account ID は数字のみ使用できます' },
+          { status: 400 },
+        )
+      }
     }
 
     const { data, error } = await supabase

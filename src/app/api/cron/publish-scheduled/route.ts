@@ -1,108 +1,120 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import { createThreadsPost } from '@/lib/platforms/threads'
-import { createInstagramPost } from '@/lib/platforms/instagram'
-import { createXTweet, createXThread } from '@/lib/platforms/x'
+import { publishPost } from '@/lib/platforms/publishers'
 import type { Post, Account } from '@/types/database'
+
+const MAX_ATTEMPTS = 5
+// 指数バックオフ: 試行回数に応じて 5/15/45/135/405 分 (≒7時間で打ち切り)
+function backoffMinutes(attempt: number): number {
+  return 5 * Math.pow(3, Math.max(0, attempt - 1))
+}
 
 // Vercel Cron: 15分毎に予約投稿を実行
 export async function GET(req: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret) {
+    console.error('[cron/publish-scheduled] CRON_SECRET is not configured')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const supabase = createServiceClient()
-  const now = new Date().toISOString()
+  const now = new Date()
+  const nowIso = now.toISOString()
 
+  // status=scheduled かつ scheduled_at が過去
+  // かつ next_retry_at が null または 過去
   const { data: posts, error } = await supabase
     .from('posts')
     .select('*, account:accounts(*)')
     .eq('status', 'scheduled')
-    .lte('scheduled_at', now)
+    .lte('scheduled_at', nowIso)
+    .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
     .limit(10)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('[cron/publish-scheduled] query failed', error.message)
+    return NextResponse.json({ error: 'Query failed' }, { status: 500 })
   }
 
+  const targets = (posts ?? []) as (Post & { account: Account })[]
+
   const results = await Promise.allSettled(
-    (posts ?? []).map(async (post: Post & { account: Account }) => {
-      const { account } = post
-      const text = post.text_content ?? ''
-      const imageUrl = post.image_url ?? undefined
-
-      let platformPostId: string
-
-      if (account.platform === 'threads') {
-        if (!account.access_token || !account.threads_user_id) {
-          throw new Error('Threadsトークン未設定')
-        }
-        const result = await createThreadsPost(
-          { accessToken: account.access_token, userId: account.threads_user_id },
-          { text, imageUrl }
-        )
-        platformPostId = result.id
-      } else if (account.platform === 'instagram') {
-        if (!account.access_token || !account.instagram_user_id) {
-          throw new Error('Instagramトークン/アカウントID未設定')
-        }
-        if (!imageUrl) {
-          throw new Error('Instagram投稿には画像が必須です')
-        }
-        const result = await createInstagramPost(
-          { accessToken: account.access_token, igUserId: account.instagram_user_id },
-          { caption: text, imageUrl }
-        )
-        platformPostId = result.id
-      } else if (account.platform === 'x') {
-        if (!account.access_token) {
-          throw new Error('Xトークン未設定')
-        }
-        const parts = text.split(/\n---\n/).map(s => s.trim()).filter(Boolean)
-        if (parts.length > 1) {
-          const r = await createXThread(account.access_token, parts)
-          platformPostId = r[0].id
-        } else {
-          const r = await createXTweet(account.access_token, text)
-          platformPostId = r.id
-        }
-      } else {
-        throw new Error(`${account.platform} の予約投稿は未対応です`)
-      }
+    targets.map(async post => {
+      const result = await publishPost({ post, account: post.account })
 
       await supabase
         .from('posts')
-        .update({ status: 'posted', posted_at: now, platform_post_id: platformPostId })
+        .update({
+          status: 'posted',
+          posted_at: nowIso,
+          platform_post_id: result.platformPostId,
+        })
         .eq('id', post.id)
 
       await supabase.from('post_logs').insert({
         post_id: post.id,
         action: 'posted',
-        message: `${account.platform} 予約投稿成功: ${platformPostId}`,
+        message: `${post.account.platform} 予約投稿成功: ${result.platformPostId}`,
       })
 
-      return { postId: post.id, platform: account.platform, platformId: platformPostId }
-    })
+      return { postId: post.id, platform: post.account.platform, platformId: result.platformPostId }
+    }),
   )
 
-  // 失敗を post_logs に記録（status は scheduled のまま：再試行可）
+  // 失敗ハンドリング: attempt_count 加算 + バックオフ or failed 確定
+  let permanentlyFailed = 0
   await Promise.all(
     results.map(async (r, i) => {
-      if (r.status === 'rejected') {
-        const post = posts![i]
-        const message = r.reason instanceof Error ? r.reason.message : String(r.reason)
+      if (r.status !== 'rejected') return
+      const post = targets[i]
+      const message = r.reason instanceof Error ? r.reason.message : String(r.reason)
+      const nextAttempt = (post.attempt_count ?? 0) + 1
+
+      if (nextAttempt >= MAX_ATTEMPTS) {
+        permanentlyFailed += 1
+        await supabase
+          .from('posts')
+          .update({
+            status: 'failed',
+            attempt_count: nextAttempt,
+            error_message: message,
+          })
+          .eq('id', post.id)
         await supabase.from('post_logs').insert({
           post_id: post.id,
           action: 'failed',
-          message: `予約投稿失敗: ${message}`,
+          message: `予約投稿 最終失敗 (${nextAttempt}/${MAX_ATTEMPTS}): ${message}`,
+        })
+      } else {
+        const nextRetry = new Date(now.getTime() + backoffMinutes(nextAttempt) * 60_000)
+        await supabase
+          .from('posts')
+          .update({
+            attempt_count: nextAttempt,
+            next_retry_at: nextRetry.toISOString(),
+            error_message: message,
+          })
+          .eq('id', post.id)
+        await supabase.from('post_logs').insert({
+          post_id: post.id,
+          action: 'failed',
+          message: `予約投稿失敗 (${nextAttempt}/${MAX_ATTEMPTS}) 次回再試行 ${nextRetry.toISOString()}: ${message}`,
         })
       }
-    })
+    }),
   )
 
   const succeeded = results.filter(r => r.status === 'fulfilled').length
-  const failed = results.filter(r => r.status === 'rejected').length
+  const transientFailed = results.filter(r => r.status === 'rejected').length - permanentlyFailed
 
-  return NextResponse.json({ processed: posts?.length ?? 0, succeeded, failed })
+  return NextResponse.json({
+    processed: targets.length,
+    succeeded,
+    transientFailed,
+    permanentlyFailed,
+  })
 }

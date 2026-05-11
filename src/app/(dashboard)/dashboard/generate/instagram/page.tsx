@@ -63,12 +63,17 @@ export default function InstagramGeneratePage() {
     Promise.all([
       fetch('/api/accounts').then(r => r.json()) as Promise<Account[]>,
       fetch('/api/reference-accounts').then(r => r.json()) as Promise<ReferenceAccount[]>,
-    ]).then(([accs, refs]) => {
-      const igAccounts = (Array.isArray(accs) ? accs : []).filter(a => a.platform === 'instagram')
-      setAccounts(igAccounts)
-      if (igAccounts.length > 0) setSelectedAccount(igAccounts[0].id)
-      setReferenceAccounts(Array.isArray(refs) ? refs : [])
-    })
+    ])
+      .then(([accs, refs]) => {
+        const igAccounts = (Array.isArray(accs) ? accs : []).filter(a => a.platform === 'instagram')
+        setAccounts(igAccounts)
+        if (igAccounts.length > 0) setSelectedAccount(igAccounts[0].id)
+        setReferenceAccounts(Array.isArray(refs) ? refs : [])
+      })
+      .catch(e => {
+        console.error('[generate/instagram] initial load failed', e)
+        alert('アカウント情報の取得に失敗しました。再読み込みしてください。')
+      })
   }, [])
 
   const isDemoMode = !selectedAccount

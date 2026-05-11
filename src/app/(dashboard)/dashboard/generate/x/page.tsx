@@ -72,9 +72,13 @@ export default function XGeneratePage() {
     fetch('/api/accounts')
       .then(r => r.json() as Promise<Account[]>)
       .then(accs => {
-        const xAccounts = accs.filter(a => a.platform === 'x')
+        const xAccounts = (Array.isArray(accs) ? accs : []).filter(a => a.platform === 'x')
         setAccounts(xAccounts)
         if (xAccounts.length > 0) setSelectedAccount(xAccounts[0].id)
+      })
+      .catch(e => {
+        console.error('[generate/x] initial load failed', e)
+        alert('アカウント情報の取得に失敗しました。再読み込みしてください。')
       })
   }, [])
 
