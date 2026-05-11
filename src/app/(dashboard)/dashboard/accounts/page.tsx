@@ -1,13 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen } from 'lucide-react'
+import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen, MessageCircle, Camera } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { SelectNative } from '@/components/ui/Select'
 import { cx } from '@/lib/utils'
 import type { Account, ReferenceAccount } from '@/types/database'
+
+type SupportedPlatform = 'threads' | 'instagram'
+
+const PLATFORM_TABS: { value: SupportedPlatform; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: 'threads',   label: 'Threads',   icon: MessageCircle },
+  { value: 'instagram', label: 'Instagram', icon: Camera },
+]
 
 const PERSONAS = [
   { value: '転職ノウハウ発信者', label: '転職ノウハウ系' },
@@ -137,6 +144,7 @@ export default function AccountsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+  const [platform, setPlatform] = useState<SupportedPlatform>('threads')
   const [form, setForm] = useState({
     name: '',
     persona: PERSONAS[0].value,
@@ -145,6 +153,7 @@ export default function AccountsPage() {
     postTopics: '転職ノウハウ、キャリア相談、仕事の悩み',
     accessToken: '',
     threadsUserId: '',
+    instagramUserId: '',
     clientId: '',
     clientSecret: '',
   })
@@ -162,9 +171,11 @@ export default function AccountsPage() {
       postTopics: '転職ノウハウ、キャリア相談、仕事の悩み',
       accessToken: '',
       threadsUserId: '',
+      instagramUserId: '',
       clientId: '',
       clientSecret: '',
     })
+    setPlatform('threads')
     setFormError('')
     setShowToken(false)
     setShowSecret(false)
@@ -187,6 +198,7 @@ export default function AccountsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          platform,
           name: form.name,
           persona: form.persona,
           tone: form.tone,
@@ -194,6 +206,7 @@ export default function AccountsPage() {
           postTopics: form.postTopics,
           accessToken: form.accessToken,
           threadsUserId: form.threadsUserId,
+          instagramUserId: form.instagramUserId,
           clientId: form.clientId,
           clientSecret: form.clientSecret,
         }),
@@ -255,13 +268,21 @@ export default function AccountsPage() {
             <Card key={account.id} className="p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E9F7F9]">
-                    <User className="h-4 w-4 text-[#00A3BF]" />
+                  <div className={cx(
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                    account.platform === 'instagram' ? 'bg-pink-50' : 'bg-[#E9F7F9]',
+                  )}>
+                    {account.platform === 'instagram'
+                      ? <Camera className="h-4 w-4 text-pink-500" />
+                      : <MessageCircle className="h-4 w-4 text-[#00A3BF]" />}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-gray-900">{account.name}</p>
-                      <span className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-[#E9F7F9] text-[#006F83]">
+                      <span className={cx(
+                        'rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider',
+                        account.platform === 'instagram' ? 'bg-pink-50 text-pink-600' : 'bg-[#E9F7F9] text-[#006F83]',
+                      )}>
                         {account.platform}
                       </span>
                     </div>
@@ -314,6 +335,28 @@ export default function AccountsPage() {
               </button>
             </div>
 
+            {/* Platform tabs */}
+            <div className="flex gap-1 border-b border-gray-100 bg-gray-50 px-6 py-2">
+              {PLATFORM_TABS.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => { setPlatform(value); setFormError('') }}
+                  disabled={submitting}
+                  className={cx(
+                    'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+                    platform === value
+                      ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200'
+                      : 'text-gray-500 hover:text-gray-700',
+                    submitting && 'opacity-40 cursor-not-allowed',
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <div className="max-h-[calc(90vh-120px)] overflow-y-auto p-6">
               <div className="space-y-4">
                 <div>
@@ -352,9 +395,11 @@ export default function AccountsPage() {
                   />
                 </div>
 
-                {/* Threads API credentials */}
+                {/* API credentials */}
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Threads API 設定</p>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    {platform === 'threads' ? 'Threads API 設定' : 'Instagram API 設定'}
+                  </p>
 
                   <div>
                     <FieldLabel>Access Token</FieldLabel>
@@ -363,7 +408,7 @@ export default function AccountsPage() {
                         type={showToken ? 'text' : 'password'}
                         value={form.accessToken}
                         onChange={e => setForm(f => ({ ...f, accessToken: e.target.value }))}
-                        placeholder="THXX..."
+                        placeholder={platform === 'threads' ? 'THXX...' : 'EAA...'}
                         className="pr-10"
                       />
                       <button
@@ -375,18 +420,31 @@ export default function AccountsPage() {
                       </button>
                     </div>
                     <p className="mt-1 text-[10px] text-gray-400">
-                      Meta for Developers の Graph API Explorer または長期トークン
+                      {platform === 'threads'
+                        ? 'Meta for Developers の Graph API Explorer または長期トークン'
+                        : 'Facebook Page アクセストークン（Instagram Business Account 接続済み）'}
                     </p>
                   </div>
 
-                  <div>
-                    <FieldLabel optional>Threads User ID</FieldLabel>
-                    <Input
-                      value={form.threadsUserId}
-                      onChange={e => setForm(f => ({ ...f, threadsUserId: e.target.value }))}
-                      placeholder="空欄ならトークンから自動取得"
-                    />
-                  </div>
+                  {platform === 'threads' ? (
+                    <div>
+                      <FieldLabel optional>Threads User ID</FieldLabel>
+                      <Input
+                        value={form.threadsUserId}
+                        onChange={e => setForm(f => ({ ...f, threadsUserId: e.target.value }))}
+                        placeholder="空欄ならトークンから自動取得"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <FieldLabel optional>Instagram Business Account ID</FieldLabel>
+                      <Input
+                        value={form.instagramUserId}
+                        onChange={e => setForm(f => ({ ...f, instagramUserId: e.target.value }))}
+                        placeholder="空欄なら /me/accounts から自動取得"
+                      />
+                    </div>
+                  )}
 
                   <details className="text-xs">
                     <summary className="cursor-pointer text-gray-500 hover:text-gray-700">

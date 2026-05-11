@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { createThreadsPost } from '@/lib/platforms/threads'
+import { createInstagramPost } from '@/lib/platforms/instagram'
 import { createXTweet, createXThread } from '@/lib/platforms/x'
 
 export async function POST(
@@ -25,11 +26,21 @@ export async function POST(
     }
 
     const account = post.account as {
+      user_id: string
       platform: string
       access_token: string | null
       threads_user_id: string | null
+      instagram_user_id: string | null
       x_user_id: string | null
       x_refresh_token: string | null
+    } | null
+
+    // 所有者チェック（IDOR対策）：post.user_id または join した account.user_id が認証ユーザーと一致すること
+    const ownsPost =
+      (post.user_id && post.user_id === user.id) ||
+      (account?.user_id && account.user_id === user.id)
+    if (!ownsPost || !account) {
+      return NextResponse.json({ error: '投稿が見つかりません' }, { status: 404 })
     }
 
     let platformPostId: string
@@ -41,6 +52,18 @@ export async function POST(
       const result = await createThreadsPost(
         { accessToken: account.access_token, userId: account.threads_user_id },
         { text: post.text_content ?? '', imageUrl: post.image_url ?? undefined }
+      )
+      platformPostId = result.id
+    } else if (account.platform === 'instagram') {
+      if (!account.access_token || !account.instagram_user_id) {
+        return NextResponse.json({ error: 'Instagram APIトークンまたはアカウントIDが設定されていません' }, { status: 400 })
+      }
+      if (!post.image_url) {
+        return NextResponse.json({ error: 'Instagram投稿には画像が必須です' }, { status: 400 })
+      }
+      const result = await createInstagramPost(
+        { accessToken: account.access_token, igUserId: account.instagram_user_id },
+        { caption: post.text_content ?? '', imageUrl: post.image_url }
       )
       platformPostId = result.id
     } else if (account.platform === 'x') {
@@ -77,12 +100,14 @@ export async function POST(
 
     return NextResponse.json({ success: true, platformPostId })
   } catch (e) {
-    const message = e instanceof Error ? e.message : '投稿に失敗しました'
+    const internalMessage = e instanceof Error ? e.message : 'unknown'
+    console.error('[posts/publish]', id, internalMessage)
 
+    // 詳細なエラーは server log のみ。クライアントへは固定メッセージ
     await (await createServerSupabaseClient())
       .from('post_logs')
-      .insert({ post_id: id, action: 'failed', message })
+      .insert({ post_id: id, action: 'failed', message: internalMessage })
 
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: '投稿に失敗しました' }, { status: 500 })
   }
 }

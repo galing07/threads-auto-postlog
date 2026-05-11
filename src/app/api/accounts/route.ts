@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { fetchInstagramUserId } from '@/lib/platforms/instagram'
 
 // 機密カラムは クライアントへ返さない（GET / POST レスポンス共通）
 const PUBLIC_ACCOUNT_COLUMNS = [
@@ -13,6 +14,7 @@ const PUBLIC_ACCOUNT_COLUMNS = [
   'post_topics',
   'token_expires_at',
   'threads_user_id',
+  'instagram_user_id',
   'is_active',
   'created_at',
   'updated_at',
@@ -27,6 +29,9 @@ const MAX_CLIENT_ID = 100
 const MAX_CLIENT_SECRET = 200
 const MAX_TOPICS = 20
 const MAX_TOPIC_LEN = 100
+
+const SUPPORTED_PLATFORMS = ['threads', 'instagram'] as const
+type SupportedPlatform = typeof SUPPORTED_PLATFORMS[number]
 
 export async function GET() {
   try {
@@ -65,6 +70,7 @@ async function fetchThreadsUserId(accessToken: string): Promise<string> {
 }
 
 interface CreateAccountBody {
+  platform?: unknown
   name?: unknown
   persona?: unknown
   tone?: unknown
@@ -72,6 +78,7 @@ interface CreateAccountBody {
   postTopics?: unknown
   accessToken?: unknown
   threadsUserId?: unknown
+  instagramUserId?: unknown
   clientId?: unknown
   clientSecret?: unknown
 }
@@ -82,6 +89,10 @@ function sanitizeStr(v: unknown, maxLen: number): string {
   return trimmed.slice(0, maxLen)
 }
 
+function isSupportedPlatform(p: unknown): p is SupportedPlatform {
+  return typeof p === 'string' && (SUPPORTED_PLATFORMS as readonly string[]).includes(p)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient()
@@ -89,6 +100,19 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
     const body = await req.json() as CreateAccountBody
+
+    // platform 未指定はデフォルトで threads、指定されている場合は値を厳密にチェック
+    let platform: SupportedPlatform
+    if (body.platform === undefined || body.platform === null || body.platform === '') {
+      platform = 'threads'
+    } else if (isSupportedPlatform(body.platform)) {
+      platform = body.platform
+    } else {
+      return NextResponse.json(
+        { error: `サポートされていないプラットフォームです（threads / instagram のみ）` },
+        { status: 400 },
+      )
+    }
 
     const name = sanitizeStr(body.name, MAX_NAME)
     const accessTokenRaw = typeof body.accessToken === 'string' ? body.accessToken.trim() : ''
@@ -109,8 +133,6 @@ export async function POST(req: NextRequest) {
     const clientId = sanitizeStr(body.clientId, MAX_CLIENT_ID) || null
     const clientSecret = sanitizeStr(body.clientSecret, MAX_CLIENT_SECRET) || null
 
-    let threadsUserId = sanitizeStr(body.threadsUserId, MAX_USER_ID)
-
     // post_topics: array | string | undefined
     let topicArray: string[]
     if (Array.isArray(body.postTopics)) {
@@ -125,13 +147,29 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .slice(0, MAX_TOPICS)
 
-    // user_id 未指定時は Threads API から自動取得
-    if (!threadsUserId) {
-      try {
-        threadsUserId = await fetchThreadsUserId(accessTokenRaw)
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'Threads APIエラー'
-        return NextResponse.json({ error: msg }, { status: 400 })
+    // プラットフォーム別の user_id 解決
+    let threadsUserId: string | null = null
+    let instagramUserId: string | null = null
+
+    if (platform === 'threads') {
+      threadsUserId = sanitizeStr(body.threadsUserId, MAX_USER_ID)
+      if (!threadsUserId) {
+        try {
+          threadsUserId = await fetchThreadsUserId(accessTokenRaw)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Threads APIエラー'
+          return NextResponse.json({ error: msg }, { status: 400 })
+        }
+      }
+    } else if (platform === 'instagram') {
+      instagramUserId = sanitizeStr(body.instagramUserId, MAX_USER_ID)
+      if (!instagramUserId) {
+        try {
+          instagramUserId = await fetchInstagramUserId(accessTokenRaw)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Instagram APIエラー'
+          return NextResponse.json({ error: msg }, { status: 400 })
+        }
       }
     }
 
@@ -139,7 +177,7 @@ export async function POST(req: NextRequest) {
       .from('accounts')
       .insert({
         user_id: user.id,
-        platform: 'threads',
+        platform,
         name,
         persona,
         tone,
@@ -149,6 +187,7 @@ export async function POST(req: NextRequest) {
         threads_user_id: threadsUserId,
         threads_client_id: clientId,
         threads_client_secret: clientSecret,
+        instagram_user_id: instagramUserId,
         is_active: true,
       })
       .select(PUBLIC_ACCOUNT_COLUMNS)

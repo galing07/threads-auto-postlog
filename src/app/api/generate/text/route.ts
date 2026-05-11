@@ -18,6 +18,7 @@ const DEMO_ACCOUNT: Account = {
   threads_user_id: null,
   threads_client_id: null,
   threads_client_secret: null,
+  instagram_user_id: null,
   x_user_id: null,
   x_refresh_token: null,
   is_active: false,

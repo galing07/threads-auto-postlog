@@ -17,6 +17,7 @@ CREATE TABLE accounts (
   threads_user_id TEXT, -- ThreadsのユーザーID
   threads_client_id TEXT, -- Meta App Client ID（アカウント単位で保管）
   threads_client_secret TEXT, -- Meta App Client Secret（同上 / RLS で保護）
+  instagram_user_id TEXT, -- Instagram Business Account ID
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
