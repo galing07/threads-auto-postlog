@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateDiagramImage } from '@/lib/ai/image'
 import { analyzeImageStructure } from '@/lib/ai/vision'
+import { fetchUserPromptExtra } from '@/lib/ai/prompt-settings'
+
+const MAX_REF_IMAGE_BYTES = 7 * 1024 * 1024 // base64で約5MB相当
+const ALLOWED_REF_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
 /**
  * 投稿本文から画像生成プロンプトを構築する
@@ -73,8 +77,15 @@ export async function POST(req: NextRequest) {
     // 参考画像があれば vision 分析して構造をプロンプトに合成
     let resolvedPrompt = basePrompt
     if (referenceImageBase64) {
+      if (referenceImageBase64.length > MAX_REF_IMAGE_BYTES) {
+        return NextResponse.json({ error: '参考画像のサイズが大きすぎます' }, { status: 400 })
+      }
+      const mime = referenceImageMimeType ?? 'image/png'
+      if (!ALLOWED_REF_MIME.has(mime)) {
+        return NextResponse.json({ error: '対応していない画像形式です' }, { status: 400 })
+      }
       try {
-        const structure = await analyzeImageStructure(referenceImageBase64, referenceImageMimeType ?? 'image/png')
+        const structure = await analyzeImageStructure(referenceImageBase64, mime)
         if (structure) {
           resolvedPrompt = `${basePrompt}\n\nApply this visual design style as reference (do NOT copy text or specific subject matter, only the visual structure):\n${structure}`
         }
@@ -82,6 +93,14 @@ export async function POST(req: NextRequest) {
         // vision 失敗時は参考画像なしで続行
         console.error('[generate/image] vision analysis failed:', e instanceof Error ? e.message : 'unknown')
       }
+    }
+
+    const userExtra = await fetchUserPromptExtra('image')
+    if (userExtra) {
+      resolvedPrompt = `${resolvedPrompt}
+
+[User-defined style preferences (apply if not conflicting)]
+${userExtra.slice(0, 3000)}`
     }
 
     const imageUrl = await generateDiagramImage({ prompt: resolvedPrompt, style })

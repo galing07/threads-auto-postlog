@@ -1,5 +1,5 @@
-export type Platform = 'threads' | 'instagram' | 'x' | 'x_thread'
-export type PostStatus = 'draft' | 'posted' | 'failed'
+export type Platform = 'threads' | 'instagram' | 'x'
+export type PostStatus = 'draft' | 'publishing' | 'posted' | 'failed'
 export type LogAction = 'generated' | 'approved' | 'posted' | 'failed'
 
 export interface Account {
@@ -31,11 +31,11 @@ export interface Post {
   text_content: string | null
   image_url: string | null
   image_prompt: string | null
-  video_url: string | null
   theme: string | null
   status: PostStatus
   posted_at: string | null
   platform_post_id: string | null
+  platform_post_ids: string[] | null
   error_message: string | null
   summary: string | null
   created_at: string
@@ -68,7 +68,7 @@ export interface ReferenceAccount {
   id: string
   user_id: string
   name: string
-  platform: string
+  platform: Platform
   handle: string | null
   notes: string | null
   created_at: string

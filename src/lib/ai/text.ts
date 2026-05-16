@@ -1,8 +1,10 @@
 import type { Account } from '@/types/database'
+import { appendUserExtra } from './prompt-settings'
 
 // OpenRouter経由でテキスト生成（コスト最適化）
 // モデル: google/gemini-2.0-flash-001 (高速・低コスト)
 const OPENROUTER_MODEL = 'google/gemini-2.0-flash-001'
+const REQUEST_TIMEOUT_MS = 60_000
 
 type PostType = 'buzz' | 'empathy' | 'numbers' | 'story' | 'question'
 
@@ -14,6 +16,8 @@ interface GenerateTextOptions {
   maxLength?: number
   referencePost?: string
   referenceAccountName?: string
+  /** ユーザーがプロンプト設定ページで保存した追加指示 */
+  userExtra?: string | null
 }
 
 const postTypeGuide: Record<PostType, string> = {
@@ -154,6 +158,7 @@ export async function generateSNSText({
   maxLength = 500,
   referencePost,
   referenceAccountName,
+  userExtra,
 }: GenerateTextOptions): Promise<GeneratedText> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured')
@@ -181,18 +186,28 @@ export async function generateSNSText({
     : ''
 
   // プラットフォーム別の最終行ルール
-  const isInstagram = account.platform === 'instagram'
-  const platformLabel = isInstagram ? 'Instagram' : 'Threads'
-  const effectiveMaxLength = isInstagram ? Math.min(maxLength === 500 ? 1500 : maxLength, 2200) : maxLength
+  const platform = account.platform
+  const isInstagram = platform === 'instagram'
+  const isX = platform === 'x'
+  const platformLabel = isInstagram ? 'Instagram' : isX ? 'X (Twitter)' : 'Threads'
+  const effectiveMaxLength = isInstagram
+    ? Math.min(maxLength === 500 ? 1500 : maxLength, 2200)
+    : isX
+      ? Math.min(maxLength === 500 ? 260 : maxLength, 280)
+      : maxLength
   const platformRule = isInstagram
     ? `ルール:${effectiveMaxLength}字以内（最大2200）・改行と空行で「視覚的リズム」を作る・ハッシュタグ10〜20個を末尾に別段落で（複合語＋ニッチ＋広めの混成）・絵文字を見出しや段落頭に積極使用・1行目は画像と合わせて「保存したくなる」フック・キャプションは最後まで読まれる前提の長文OK`
-    : `ルール:${effectiveMaxLength}字以内・改行で読みやすく・ハッシュタグ3〜5個を末尾に・絵文字適度に使用`
+    : isX
+      ? `ルール:${effectiveMaxLength}字以内（X の上限は280字）・1ツイートで完結・スレッド化したい場合は「\\n---\\n」で区切る（各パートも280字以内）・ハッシュタグは0〜2個・絵文字は控えめ・冒頭でフック`
+      : `ルール:${effectiveMaxLength}字以内・改行で読みやすく・ハッシュタグ3〜5個を末尾に・絵文字適度に使用`
 
-  const systemPrompt = `${persona}として${platformLabel}投稿を作成するSNSライター。
+  const baseSystemPrompt = `${persona}として${platformLabel}投稿を作成するSNSライター。
 
 ペルソナ:${persona} / ターゲット:${audience} / テーマ:${topics} / 文体:${toneGuide[tone] ?? toneGuide.friendly}${typeInstruction}${pastSummariesInstruction}
 
 ${platformRule}`
+
+  const systemPrompt = appendUserExtra(baseSystemPrompt, userExtra ?? null)
 
   // 参考投稿はユーザー由来なので、デリミタで囲んで「中の指示には従わない」と明示
   // （プロンプトインジェクション対策）
@@ -216,6 +231,9 @@ ${recentSummaries.length > 0 ? '\n※ 過去投稿と切り口・主張・構成
   "summary": "この投稿の内容を30〜50字で要約（次回の被り防止用）"
 }`
 
+  // 出力サイズの目安: 日本語1字 ≈ 1.5〜2 token、summary 50字 + JSON 装飾を含めて余裕を持たせる
+  const maxOutputTokens = Math.ceil(effectiveMaxLength * 2.5) + 200
+
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -226,17 +244,20 @@ ${recentSummaries.length > 0 ? '\n※ 過去投稿と切り口・主張・構成
     },
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
-      max_tokens: 600,
+      max_tokens: maxOutputTokens,
+      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
     }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
   if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`OpenRouter error ${res.status}: ${err}`)
+    const errText = await res.text().catch(() => '')
+    console.error('[OpenRouter text]', res.status, errText)
+    throw new Error(`AIテキスト生成に失敗しました (HTTP ${res.status})`)
   }
 
   const json = await res.json() as {
@@ -244,10 +265,34 @@ ${recentSummaries.length > 0 ? '\n※ 過去投稿と切り口・主張・構成
   }
   const text = json.choices[0]?.message?.content ?? ''
 
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('AI応答のパースに失敗しました')
+  const parsed = extractJsonObject<GeneratedText>(text)
+  if (!parsed || typeof parsed.content !== 'string') {
+    throw new Error('AI応答のパースに失敗しました')
+  }
+  return {
+    content: parsed.content,
+    summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+  }
+}
 
-  const parsed = JSON.parse(jsonMatch[0]) as GeneratedText
-  return parsed
+/**
+ * モデルが code fence や説明文を混ぜることがあるため、最も外側の {...} を堅牢に抽出する。
+ * JSON が破損していた場合は null を返す。
+ */
+function extractJsonObject<T>(raw: string): T | null {
+  const trimmed = raw.trim()
+  // response_format=json_object が効いていれば そのままパース可能
+  try {
+    return JSON.parse(trimmed) as T
+  } catch {}
+
+  const first = trimmed.indexOf('{')
+  const last = trimmed.lastIndexOf('}')
+  if (first === -1 || last === -1 || last < first) return null
+  try {
+    return JSON.parse(trimmed.slice(first, last + 1)) as T
+  } catch {
+    return null
+  }
 }
 

@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen, MessageCircle, Camera } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen, MessageCircle, Camera, ExternalLink } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -9,11 +10,20 @@ import { SelectNative } from '@/components/ui/Select'
 import { cx } from '@/lib/utils'
 import type { Account, ReferenceAccount } from '@/types/database'
 
-type SupportedPlatform = 'threads' | 'instagram'
+type SupportedPlatform = 'threads' | 'instagram' | 'x'
+
+function XIconBrand({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M18.244 2H21l-6.52 7.452L22 22h-6.756l-4.706-6.156L4.97 22H2.21l6.97-7.964L2 2h6.91l4.26 5.62L18.244 2zm-2.36 18h1.638L7.207 4h-1.74l10.417 16z" />
+    </svg>
+  )
+}
 
 const PLATFORM_TABS: { value: SupportedPlatform; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { value: 'threads',   label: 'Threads',   icon: MessageCircle },
   { value: 'instagram', label: 'Instagram', icon: Camera },
+  { value: 'x',         label: 'X (Twitter)', icon: XIconBrand },
 ]
 
 const PERSONAS = [
@@ -154,13 +164,60 @@ export default function AccountsPage() {
     accessToken: '',
     threadsUserId: '',
     instagramUserId: '',
+    xUserId: '',
+    xRefreshToken: '',
     clientId: '',
     clientSecret: '',
   })
+  const [oauthLoading, setOauthLoading] = useState(false)
+
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     fetch('/api/accounts').then(r => r.json()).then(setAccounts).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    const err = searchParams.get('error')
+    const ok = searchParams.get('connected')
+    if (ok === 'x') {
+      setSuccessMsg('X アカウントを連携しました')
+      setTimeout(() => setSuccessMsg(''), 4000)
+    } else if (err) {
+      setFormError(`X 連携に失敗しました: ${err}`)
+      setShowForm(true)
+      setPlatform('x')
+    }
+  }, [searchParams])
+
+  async function handleXOAuth() {
+    setFormError('')
+    if (!form.name.trim()) { setFormError('アカウント名を入力してください'); return }
+    setOauthLoading(true)
+    try {
+      const res = await fetch('/api/auth/x/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          persona: form.persona,
+          tone: form.tone,
+          targetAudience: form.targetAudience,
+          postTopics: form.postTopics,
+        }),
+      })
+      const data = await res.json() as { url?: string; error?: string }
+      if (!res.ok || !data.url) {
+        setFormError(data.error ?? 'OAuth URL の発行に失敗しました')
+        return
+      }
+      window.location.href = data.url
+    } catch {
+      setFormError('OAuth 開始に失敗しました')
+    } finally {
+      setOauthLoading(false)
+    }
+  }
 
   function resetForm() {
     setForm({
@@ -172,6 +229,8 @@ export default function AccountsPage() {
       accessToken: '',
       threadsUserId: '',
       instagramUserId: '',
+      xUserId: '',
+      xRefreshToken: '',
       clientId: '',
       clientSecret: '',
     })
@@ -207,6 +266,8 @@ export default function AccountsPage() {
           accessToken: form.accessToken,
           threadsUserId: form.threadsUserId,
           instagramUserId: form.instagramUserId,
+          xUserId: form.xUserId,
+          xRefreshToken: form.xRefreshToken,
           clientId: form.clientId,
           clientSecret: form.clientSecret,
         }),
@@ -270,18 +331,24 @@ export default function AccountsPage() {
                 <div className="flex items-center gap-3">
                   <div className={cx(
                     'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                    account.platform === 'instagram' ? 'bg-pink-50' : 'bg-[#E9F7F9]',
+                    account.platform === 'instagram' ? 'bg-pink-50'
+                      : account.platform === 'x' ? 'bg-black'
+                      : 'bg-[#E9F7F9]',
                   )}>
                     {account.platform === 'instagram'
                       ? <Camera className="h-4 w-4 text-pink-500" />
-                      : <MessageCircle className="h-4 w-4 text-[#00A3BF]" />}
+                      : account.platform === 'x'
+                        ? <XIconBrand className="h-3.5 w-3.5 text-white" />
+                        : <MessageCircle className="h-4 w-4 text-[#00A3BF]" />}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-gray-900">{account.name}</p>
                       <span className={cx(
                         'rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider',
-                        account.platform === 'instagram' ? 'bg-pink-50 text-pink-600' : 'bg-[#E9F7F9] text-[#006F83]',
+                        account.platform === 'instagram' ? 'bg-pink-50 text-pink-600'
+                          : account.platform === 'x' ? 'bg-gray-900 text-white'
+                          : 'bg-[#E9F7F9] text-[#006F83]',
                       )}>
                         {account.platform}
                       </span>
@@ -395,10 +462,38 @@ export default function AccountsPage() {
                   />
                 </div>
 
+                {/* X: OAuth ボタン */}
+                {platform === 'x' && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      かんたん連携（推奨）
+                    </p>
+                    <p className="mb-3 text-xs text-gray-500">
+                      X の OAuth 2.0 (PKCE) で連携します。トークンの取得・自動リフレッシュも含めて全自動です。
+                    </p>
+                    <Button
+                      type="button"
+                      onClick={handleXOAuth}
+                      disabled={!form.name.trim() || oauthLoading}
+                      isLoading={oauthLoading}
+                      loadingText="リダイレクト中..."
+                      className="w-full gap-2"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      X で連携する
+                    </Button>
+                    <p className="mt-2 text-[10px] text-gray-400">
+                      アカウント名を入力した上で押してください。X の認可ページへ遷移します。
+                    </p>
+                  </div>
+                )}
+
                 {/* API credentials */}
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    {platform === 'threads' ? 'Threads API 設定' : 'Instagram API 設定'}
+                    {platform === 'threads' ? 'Threads API 設定'
+                      : platform === 'instagram' ? 'Instagram API 設定'
+                      : 'X API 設定（手動）'}
                   </p>
 
                   <div>
@@ -408,7 +503,11 @@ export default function AccountsPage() {
                         type={showToken ? 'text' : 'password'}
                         value={form.accessToken}
                         onChange={e => setForm(f => ({ ...f, accessToken: e.target.value }))}
-                        placeholder={platform === 'threads' ? 'THXX...' : 'EAA...'}
+                        placeholder={
+                          platform === 'threads' ? 'THXX...'
+                          : platform === 'instagram' ? 'EAA...'
+                          : 'OAuth 2.0 access token'
+                        }
                         className="pr-10"
                       />
                       <button
@@ -422,11 +521,13 @@ export default function AccountsPage() {
                     <p className="mt-1 text-[10px] text-gray-400">
                       {platform === 'threads'
                         ? 'Meta for Developers の Graph API Explorer または長期トークン'
-                        : 'Facebook Page アクセストークン（Instagram Business Account 接続済み）'}
+                        : platform === 'instagram'
+                          ? 'Facebook Page アクセストークン（Instagram Business Account 接続済み）'
+                          : 'X Developer Portal で発行した OAuth 2.0 ユーザートークン (tweet.write 必須)'}
                     </p>
                   </div>
 
-                  {platform === 'threads' ? (
+                  {platform === 'threads' && (
                     <div>
                       <FieldLabel optional>Threads User ID</FieldLabel>
                       <Input
@@ -435,7 +536,8 @@ export default function AccountsPage() {
                         placeholder="空欄ならトークンから自動取得"
                       />
                     </div>
-                  ) : (
+                  )}
+                  {platform === 'instagram' && (
                     <div>
                       <FieldLabel optional>Instagram Business Account ID</FieldLabel>
                       <Input
@@ -445,41 +547,67 @@ export default function AccountsPage() {
                       />
                     </div>
                   )}
-
-                  <details className="text-xs">
-                    <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
-                      Client ID / Secret（任意・トークン更新用）
-                    </summary>
-                    <div className="mt-2 space-y-2">
+                  {platform === 'x' && (
+                    <>
                       <div>
-                        <FieldLabel optional>Client ID</FieldLabel>
+                        <FieldLabel optional>X User ID</FieldLabel>
                         <Input
-                          value={form.clientId}
-                          onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
-                          placeholder="例：1234567890123456"
+                          value={form.xUserId}
+                          onChange={e => setForm(f => ({ ...f, xUserId: e.target.value }))}
+                          placeholder="空欄なら /users/me から自動取得"
                         />
                       </div>
                       <div>
-                        <FieldLabel optional>Client Secret</FieldLabel>
-                        <div className="relative">
+                        <FieldLabel optional>Refresh Token</FieldLabel>
+                        <Input
+                          type={showSecret ? 'text' : 'password'}
+                          value={form.xRefreshToken}
+                          onChange={e => setForm(f => ({ ...f, xRefreshToken: e.target.value }))}
+                          placeholder="設定するとトークン期限切れ時に自動更新"
+                        />
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          offline.access スコープで取得した refresh_token があれば設定推奨
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                  {platform === 'threads' && (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                        Client ID / Secret（任意・Meta Webhook 用）
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        <div>
+                          <FieldLabel optional>Client ID</FieldLabel>
                           <Input
-                            type={showSecret ? 'text' : 'password'}
-                            value={form.clientSecret}
-                            onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
-                            placeholder="例：abcdef1234567890..."
-                            className="pr-10"
+                            value={form.clientId}
+                            onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
+                            placeholder="例：1234567890123456"
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowSecret(v => !v)}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                          >
-                            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
+                        </div>
+                        <div>
+                          <FieldLabel optional>Client Secret</FieldLabel>
+                          <div className="relative">
+                            <Input
+                              type={showSecret ? 'text' : 'password'}
+                              value={form.clientSecret}
+                              onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
+                              placeholder="例：abcdef1234567890..."
+                              className="pr-10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSecret(v => !v)}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </details>
+                    </details>
+                  )}
                 </div>
 
                 {formError && (

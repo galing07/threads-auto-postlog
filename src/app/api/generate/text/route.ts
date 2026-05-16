@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateSNSText } from '@/lib/ai/text'
+import { fetchUserPromptExtra } from '@/lib/ai/prompt-settings'
 import type { Account } from '@/types/database'
 
 // アカウントなし時のデフォルト設定
@@ -32,16 +33,25 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const { accountId, theme, postType, referencePost, referenceAccountName } = await req.json() as {
+    const body = await req.json() as {
       accountId?: string
-      theme: string
+      theme?: string
       postType?: string
       referencePost?: string
       referenceAccountName?: string
     }
+    const theme = typeof body.theme === 'string' ? body.theme.trim().slice(0, 200) : ''
     if (!theme) {
       return NextResponse.json({ error: 'theme は必須です' }, { status: 400 })
     }
+    const postType = typeof body.postType === 'string' ? body.postType.slice(0, 50) : undefined
+    const referencePost = typeof body.referencePost === 'string'
+      ? body.referencePost.slice(0, 2000)
+      : undefined
+    const referenceAccountName = typeof body.referenceAccountName === 'string'
+      ? body.referenceAccountName.trim().slice(0, 80).replace(/[<>]/g, '')
+      : undefined
+    const accountId = typeof body.accountId === 'string' ? body.accountId : undefined
 
     let account: Account = DEMO_ACCOUNT
     let recentSummaries: string[] = []
@@ -74,10 +84,20 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
     }
 
-    const result = await generateSNSText({ account, theme, postType, recentSummaries, referencePost, referenceAccountName })
+    const userExtra = await fetchUserPromptExtra('text')
+
+    const result = await generateSNSText({
+      account,
+      theme,
+      postType,
+      recentSummaries,
+      referencePost,
+      referenceAccountName,
+      userExtra,
+    })
     return NextResponse.json(result)
   } catch (e) {
-    const message = e instanceof Error ? e.message : '生成に失敗しました'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[generate/text]', e instanceof Error ? e.message : 'unknown')
+    return NextResponse.json({ error: '生成に失敗しました' }, { status: 500 })
   }
 }

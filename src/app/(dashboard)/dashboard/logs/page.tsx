@@ -31,39 +31,9 @@ function PostCard({ post, onPublish }: { post: PostWithAccount; onPublish: (id: 
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex gap-0">
-        {/* メディアエリア（動画 > 画像 > なし の優先順位） */}
+        {/* メディアエリア（画像 > なし の優先順位） */}
         <div className="shrink-0">
-          {post.video_url ? (
-            <>
-              <button onClick={() => setImgOpen(true)} className="block relative h-36 w-36 overflow-hidden bg-black">
-                <video
-                  src={post.video_url}
-                  className="h-36 w-36 object-cover"
-                  muted
-                  preload="metadata"
-                />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90">
-                    <div className="h-0 w-0 ml-0.5 border-y-[6px] border-y-transparent border-l-[10px] border-l-gray-900" />
-                  </div>
-                </div>
-              </button>
-              {imgOpen && (
-                <div
-                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-                  onClick={() => setImgOpen(false)}
-                >
-                  <video
-                    src={post.video_url}
-                    controls
-                    autoPlay
-                    className="max-h-[90vh] max-w-[90vw] rounded-xl shadow-2xl"
-                    onClick={e => e.stopPropagation()}
-                  />
-                </div>
-              )}
-            </>
-          ) : post.image_url ? (
+          {post.image_url ? (
             <>
               <button onClick={() => setImgOpen(true)} className="block">
                 <img

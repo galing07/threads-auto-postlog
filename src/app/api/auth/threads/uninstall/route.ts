@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import crypto from 'crypto'
 
 /**
@@ -53,10 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 該当ユーザーの client_secret を特定するためにサービスロールで全アカウント検索
-    const admin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
+    const admin = createAdminClient()
 
     const { data: accounts } = await admin
       .from('accounts')

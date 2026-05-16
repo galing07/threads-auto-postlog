@@ -1,11 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { createClient } from '@supabase/supabase-js'
-import OpenAI from 'openai'
-import { toFile } from 'openai'
+import { uploadGeneratedImage } from '@/lib/ai/image'
+import OpenAI, { toFile } from 'openai'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ImageEditFn = (p: any) => Promise<{ data: Array<{ b64_json?: string }> }>
+type ImageEditFn = (p: Record<string, unknown>) => Promise<{
+  data?: Array<{ b64_json?: string }>
+}>
+
+const FETCH_TIMEOUT_MS = 20_000
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10MB
+
+/**
+ * imageUrl の SSRF 対策:
+ *  - https:// のみ許可
+ *  - 自前 Supabase Storage の publicUrl ホスト と OpenAI が返す既知ホストのみ allowlist
+ */
+function isAllowedImageUrl(input: string): boolean {
+  let url: URL
+  try {
+    url = new URL(input)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:') return false
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (supabaseUrl) {
+    try {
+      const allowedHost = new URL(supabaseUrl).host
+      if (url.host === allowedHost) return true
+    } catch {}
+  }
+  // OpenAI が返す生成画像 URL のホスト
+  if (url.host.endsWith('.openai.com') || url.host.endsWith('.oaiusercontent.com')) {
+    return true
+  }
+  return false
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,16 +52,31 @@ export async function POST(req: NextRequest) {
     if (!imageUrl || !editPrompt?.trim()) {
       return NextResponse.json({ error: 'imageUrl と editPrompt が必要です' }, { status: 400 })
     }
+    if (!isAllowedImageUrl(imageUrl)) {
+      return NextResponse.json({ error: '対応していない画像URLです' }, { status: 400 })
+    }
+    if (editPrompt.length > 1000) {
+      return NextResponse.json({ error: '編集指示は1000文字以内にしてください' }, { status: 400 })
+    }
 
-    // 元画像をダウンロード（PNG として渡す）
-    const imgRes = await fetch(imageUrl)
-    if (!imgRes.ok) throw new Error('元画像の取得に失敗しました')
-    const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+    // 元画像をダウンロード
+    const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    if (!imgRes.ok) {
+      return NextResponse.json({ error: '元画像の取得に失敗しました' }, { status: 400 })
+    }
+    const contentLength = Number(imgRes.headers.get('content-length') ?? 0)
+    if (contentLength && contentLength > MAX_IMAGE_BYTES) {
+      return NextResponse.json({ error: '画像サイズが大きすぎます' }, { status: 400 })
+    }
+    const arrayBuffer = await imgRes.arrayBuffer()
+    if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) {
+      return NextResponse.json({ error: '画像サイズが大きすぎます' }, { status: 400 })
+    }
+    const imgBuffer = Buffer.from(arrayBuffer)
 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    // リトライあり（500はOpenAI側の一時エラーが多い）
-    let response: { data: Array<{ b64_json?: string }> } | null = null
+    let response: { data?: Array<{ b64_json?: string }> } | null = null
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         response = await (client.images.edit as ImageEditFn)({
@@ -43,8 +89,8 @@ export async function POST(req: NextRequest) {
         })
         break
       } catch (e) {
-        const msg = e instanceof Error ? e.message : ''
-        if (attempt === 0 && msg.includes('500')) {
+        const status = (e as Error & { status?: number }).status
+        if (attempt === 0 && (status === 500 || status === 502 || status === 503 || status === 504)) {
           await new Promise(r => setTimeout(r, 2000))
           continue
         }
@@ -52,28 +98,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const b64 = response?.data[0]?.b64_json
+    const b64 = response?.data?.[0]?.b64_json
     if (!b64) throw new Error('編集後の画像データが取得できませんでした')
 
-    const storage = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-
-    const fileName = `generated/${Date.now()}-${Math.random().toString(36).slice(2)}.png`
-    const { error: uploadError } = await storage.storage
-      .from('post-images')
-      .upload(fileName, Buffer.from(b64, 'base64'), { contentType: 'image/png', upsert: false })
-
-    if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`)
-
-    const { data: { publicUrl } } = storage.storage
-      .from('post-images')
-      .getPublicUrl(fileName)
-
+    const publicUrl = await uploadGeneratedImage(b64, 'png', 'image/png')
     return NextResponse.json({ imageUrl: publicUrl })
   } catch (e) {
-    const message = e instanceof Error ? e.message : '画像編集に失敗しました'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[generate/image/edit]', e instanceof Error ? e.message : 'unknown')
+    return NextResponse.json({ error: '画像編集に失敗しました' }, { status: 500 })
   }
 }

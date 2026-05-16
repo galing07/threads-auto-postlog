@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { fetchUserPromptExtra, appendUserExtra } from '@/lib/ai/prompt-settings'
 import type { Account } from '@/types/database'
 
 const DEMO_ACCOUNT: Pick<Account, 'persona' | 'tone' | 'target_audience' | 'post_topics'> = {
@@ -43,6 +44,9 @@ export async function POST(req: NextRequest) {
     const usedThemes = (existingPosts ?? [])
       .map(p => p.theme)
       .filter((t): t is string => Boolean(t))
+      // 過去のユーザー入力に基づくため、プロンプト内で命令として解釈されないようサニタイズ
+      .map(t => t.replace(/[\n\r`]/g, ' ').slice(0, 120))
+      .slice(0, 100)
 
     const topics = account.post_topics?.join('、') ?? '転職、キャリア'
     const audience = account.target_audience ?? '20代社会人'
@@ -52,7 +56,7 @@ export async function POST(req: NextRequest) {
       ? `\n\n【すでに投稿済み・使用済みのテーマ（これらと被らないこと）】\n${usedThemes.map(t => `- ${t}`).join('\n')}`
       : ''
 
-    const prompt = `${persona}として、${audience}向けのThreads投稿テーマを15個考えてください。
+    const basePrompt = `${persona}として、${audience}向けのThreads投稿テーマを15個考えてください。
 テーマ一覧：${topics}${avoidSection}
 
 条件：
@@ -65,6 +69,9 @@ export async function POST(req: NextRequest) {
 返答形式（他の文章は不要）：
 ["テーマ1", "テーマ2", "テーマ3", "テーマ4", "テーマ5", "テーマ6"]`
 
+    const userExtra = await fetchUserPromptExtra('themes')
+    const prompt = appendUserExtra(basePrompt, userExtra)
+
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -75,20 +82,43 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: 'google/gemini-2.0-flash-001',
-        max_tokens: 600,
+        max_tokens: 800,
         messages: [{ role: 'user', content: prompt }],
       }),
+      signal: AbortSignal.timeout(60_000),
     })
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      console.error('[generate/themes] openrouter', res.status, errText)
+      return NextResponse.json({ error: 'テーマ生成に失敗しました' }, { status: 500 })
+    }
 
     const json = await res.json() as { choices: Array<{ message: { content: string } }> }
     const text = json.choices[0]?.message?.content ?? '[]'
 
-    const match = text.match(/\[[\s\S]*\]/)
-    const themes = match ? JSON.parse(match[0]) as string[] : []
-
+    const themes = extractStringArray(text)
     return NextResponse.json({ themes })
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'テーマ生成に失敗しました'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[generate/themes]', e instanceof Error ? e.message : 'unknown')
+    return NextResponse.json({ error: 'テーマ生成に失敗しました' }, { status: 500 })
+  }
+}
+
+function extractStringArray(raw: string): string[] {
+  const trimmed = raw.trim()
+  const first = trimmed.indexOf('[')
+  const last = trimmed.lastIndexOf(']')
+  if (first === -1 || last === -1 || last < first) return []
+  try {
+    const parsed = JSON.parse(trimmed.slice(first, last + 1)) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((s): s is string => typeof s === 'string')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .slice(0, 30)
+  } catch {
+    return []
   }
 }

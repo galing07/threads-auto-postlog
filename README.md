@@ -1,17 +1,15 @@
 # SNS Auto Post — マルチプラットフォーム自動投稿システム
 
-Threads / TikTok 向けの AI 自動投稿管理 Web アプリ。
+Threads / Instagram / X 向けの AI 自動投稿管理 Web アプリ。
 
 ## 機能
 
 - **AIテキスト生成** — ペルソナ別の投稿文を自動生成（OpenRouter / Gemini）
-- **AI図解生成** — 投稿に合わせた図解画像を自動生成（gpt-image）
-- **AIアバター動画生成** — TikTok 向けに HeyGen でアバター喋り動画を生成（字幕付き）
+- **AI図解生成** — 投稿に合わせた図解画像を自動生成（OpenAI gpt-image-2）
 - **参考投稿（テキスト・画像）** — 参考にしたい投稿/画像をペーストしてテイスト寄せ
 - **プレビュー・承認フロー** — 確認してから投稿
-- **予約投稿** — Vercel Cronで15分毎に自動実行（Threads）
 - **多アカウント対応** — ペルソナ別に複数アカウント管理
-- **拡張設計** — Instagram / X への追加を想定
+- **Threads / Instagram / X** に対応（X はスレッド投稿対応・トークンは自動リフレッシュ）
 
 ## セットアップ
 
@@ -25,21 +23,25 @@ cp .env.example .env.local
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=xxxx
 SUPABASE_SERVICE_ROLE_KEY=xxxx
-ANTHROPIC_API_KEY=sk-ant-xxxx
+NEXT_PUBLIC_APP_URL=https://your-domain.example
 OPENAI_API_KEY=sk-xxxx
-CRON_SECRET=任意のランダム文字列
+OPENROUTER_API_KEY=sk-or-xxxx
+# X (Twitter) 連携を使う場合
+X_CLIENT_ID=xxxx
+X_CLIENT_SECRET=xxxx
 ```
 
 ### 2. Supabase DBセットアップ
 
-[supabase.com](https://supabase.com) でプロジェクト作成後、SQL Editorで `supabase/schema.sql` を実行。
+[supabase.com](https://supabase.com) でプロジェクト作成後、SQL Editor で `supabase/schema.sql` を実行（新規）。
+既存環境を最新化する場合は `supabase/migrations/` の SQL を順番に適用する。
+画像アップロード用に Storage バケット `post-images` を作成（public read を有効化）。
 
-### 3. Threads APIトークン取得
+### 3. プラットフォーム別の認証
 
-1. [developers.facebook.com](https://developers.facebook.com) でアプリ作成
-2. 「Threads API」製品を追加
-3. long-lived アクセストークンを発行（有効期限60日）
-4. アプリの「アカウント管理」画面でトークンを登録
+- **Threads**: [developers.facebook.com](https://developers.facebook.com) で App を作成し Threads API を追加 → long-lived access token を取得 → アプリの「アカウント管理」画面で登録。期限切れ時は publish 実行時に自動でリフレッシュされる。
+- **Instagram**: Instagram Business Account を Facebook Page に接続 → Graph API の access token を取得 → アプリで `instagram` を選んで登録（Business Account ID は自動取得）。
+- **X (Twitter)**: X Developer Portal で OAuth 2.0 (PKCE) アプリを作成し、Redirect URI を `${NEXT_PUBLIC_APP_URL}/api/auth/x/callback` に設定 → `X_CLIENT_ID` / `X_CLIENT_SECRET` を環境変数に設定 → アプリの「アカウント管理」画面で「X を連携」から OAuth を開始。
 
 ### 4. 起動
 
@@ -48,13 +50,11 @@ npm install
 npm run dev
 ```
 
-### 5. Vercelデプロイ
+### 5. Vercel デプロイ
 
 ```bash
 vercel
 ```
-
-`vercel.json` のCronが自動で有効になり、15分毎に予約投稿が実行されます。
 
 ## 技術スタック
 
@@ -62,10 +62,9 @@ vercel
 |----------|------|
 | フロントエンド | Next.js 16 + Tailwind CSS |
 | DB | Supabase (PostgreSQL + RLS) |
-| テキスト生成 | Claude API (claude-sonnet-4-6) |
-| 画像生成 | OpenAI gpt-image-1 |
-| 投稿API | Meta Threads Graph API |
-| スケジューラー | Vercel Cron |
+| テキスト生成 | OpenRouter (Gemini 2.0 Flash) |
+| 画像生成 | OpenAI gpt-image-2 |
+| 投稿API | Threads Graph API / Instagram Graph API / X API v2 |
 | デプロイ | Vercel |
 
 ---

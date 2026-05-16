@@ -1,26 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { exchangeXCode, getXMe } from '@/lib/platforms/x'
+
+function redirectWithError(appUrl: string, code: string) {
+  const res = NextResponse.redirect(`${appUrl}/dashboard/accounts?error=${encodeURIComponent(code)}`)
+  res.cookies.delete('x_oauth_pending')
+  return res
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
   const state = searchParams.get('state')
-  const error = searchParams.get('error')
+  const oauthError = searchParams.get('error')
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
-  if (error) {
-    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=${encodeURIComponent(error)}`)
+  if (oauthError) {
+    // X からの error コードは安全な短文（access_denied 等）。長さだけ制限して通す
+    return redirectWithError(appUrl, oauthError.slice(0, 50))
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=missing_params`)
+    return redirectWithError(appUrl, 'missing_params')
   }
 
   const raw = req.cookies.get('x_oauth_pending')?.value
   if (!raw) {
-    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=session_expired`)
+    return redirectWithError(appUrl, 'session_expired')
   }
 
   let pending: {
@@ -37,11 +44,11 @@ export async function GET(req: NextRequest) {
   try {
     pending = JSON.parse(raw)
   } catch {
-    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=invalid_session`)
+    return redirectWithError(appUrl, 'invalid_session')
   }
 
   if (pending.state !== state) {
-    return NextResponse.redirect(`${appUrl}/dashboard/accounts?error=state_mismatch`)
+    return redirectWithError(appUrl, 'state_mismatch')
   }
 
   const clientId = process.env.X_CLIENT_ID!
@@ -59,17 +66,15 @@ export async function GET(req: NextRequest) {
 
     const me = await getXMe(tokens.accessToken)
 
-    const admin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    const admin = createAdminClient()
 
     const postTopics = pending.postTopics
       .split('、')
       .map(s => s.trim())
       .filter(Boolean)
+      .slice(0, 20)
 
-    await admin.from('accounts').insert({
+    const { error: insertError } = await admin.from('accounts').insert({
       user_id: pending.userId,
       platform: 'x',
       name: pending.name || me.name,
@@ -83,13 +88,16 @@ export async function GET(req: NextRequest) {
       token_expires_at: new Date(tokens.expiresAt).toISOString(),
     })
 
+    if (insertError) {
+      console.error('[x/callback] insert', insertError.message)
+      return redirectWithError(appUrl, 'save_failed')
+    }
+
     const res = NextResponse.redirect(`${appUrl}/dashboard/accounts?connected=x`)
     res.cookies.delete('x_oauth_pending')
     return res
   } catch (e) {
     console.error('[x/callback]', e instanceof Error ? e.message : 'unknown')
-    return NextResponse.redirect(
-      `${appUrl}/dashboard/accounts?error=${encodeURIComponent(e instanceof Error ? e.message : 'unknown')}`
-    )
+    return redirectWithError(appUrl, 'oauth_failed')
   }
 }

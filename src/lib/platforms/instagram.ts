@@ -3,19 +3,27 @@
 // Token はすべて Authorization: Bearer ヘッダーで送信（URL query への露出を避ける）
 
 const IG_API_BASE = 'https://graph.facebook.com/v21.0'
+const REQUEST_TIMEOUT_MS = 30_000
 
 interface InstagramCredentials {
   accessToken: string
-  igUserId: string // Instagram Business Account ID
+  igUserId: string
 }
 
 interface CreatePostOptions {
   caption: string
-  imageUrl: string // 必須（Instagramはテキストのみ投稿不可）
+  imageUrl: string
 }
 
 interface InstagramPostResult {
   id: string
+}
+
+export class InstagramAuthError extends Error {
+  constructor(message = 'Instagram access token expired or invalid') {
+    super(message)
+    this.name = 'InstagramAuthError'
+  }
 }
 
 async function igRequest<T>(
@@ -26,16 +34,11 @@ async function igRequest<T>(
   const { method = 'GET', body } = options
   const init: RequestInit = {
     method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   }
   if (method === 'POST' && body) {
-    // application/x-www-form-urlencoded で POST（access_token は header）
-    init.headers = {
-      ...init.headers,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    }
+    init.headers = { ...init.headers, 'Content-Type': 'application/x-www-form-urlencoded' }
     init.body = new URLSearchParams(body).toString()
   }
 
@@ -43,6 +46,9 @@ async function igRequest<T>(
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
     console.error('[Instagram API]', method, path, res.status, errText)
+    if (res.status === 401 || res.status === 403) {
+      throw new InstagramAuthError()
+    }
     throw new Error(`Instagram API error (HTTP ${res.status})`)
   }
   return res.json() as Promise<T>
@@ -61,22 +67,19 @@ export async function createInstagramPost(
   if (!imageUrl) {
     throw new Error('Instagramは画像が必須です')
   }
-  // Instagram の Graph API はサーバ側から imageUrl を fetch するため
-  // https のみ受け付け、http や file:/data: などは拒否（SSRF誘発の縮小）
+  // Instagram の Graph API は image_url をサーバ側から fetch するため、https のみ受け付ける（SSRF縮小）
   if (!/^https:\/\//i.test(imageUrl)) {
     throw new Error('Instagram の画像URLは https:// で始まる必要があります')
   }
 
-  // Step 1: メディアコンテナ作成
   const container = await igRequest<{ id: string }>(
-    `/${igUserId}/media`,
+    `/${encodeURIComponent(igUserId)}/media`,
     accessToken,
     { method: 'POST', body: { image_url: imageUrl, caption } },
   )
 
-  // Step 2: 公開
   const published = await igRequest<{ id: string }>(
-    `/${igUserId}/media_publish`,
+    `/${encodeURIComponent(igUserId)}/media_publish`,
     accessToken,
     { method: 'POST', body: { creation_id: container.id } },
   )
@@ -86,7 +89,6 @@ export async function createInstagramPost(
 
 /**
  * Token から接続済みの Instagram Business Account ID を取得
- * /me/accounts → 各 Page の instagram_business_account を抽出
  */
 export async function fetchInstagramUserId(accessToken: string): Promise<string> {
   const data = await igRequest<{

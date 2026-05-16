@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { fetchInstagramUserId } from '@/lib/platforms/instagram'
+import { getXMe } from '@/lib/platforms/x'
 
 // 機密カラムは クライアントへ返さない（GET / POST レスポンス共通）
 const PUBLIC_ACCOUNT_COLUMNS = [
@@ -15,6 +16,7 @@ const PUBLIC_ACCOUNT_COLUMNS = [
   'token_expires_at',
   'threads_user_id',
   'instagram_user_id',
+  'x_user_id',
   'is_active',
   'created_at',
   'updated_at',
@@ -30,7 +32,7 @@ const MAX_CLIENT_SECRET = 200
 const MAX_TOPICS = 20
 const MAX_TOPIC_LEN = 100
 
-const SUPPORTED_PLATFORMS = ['threads', 'instagram'] as const
+const SUPPORTED_PLATFORMS = ['threads', 'instagram', 'x'] as const
 type SupportedPlatform = typeof SUPPORTED_PLATFORMS[number]
 
 export async function GET() {
@@ -79,6 +81,8 @@ interface CreateAccountBody {
   accessToken?: unknown
   threadsUserId?: unknown
   instagramUserId?: unknown
+  xUserId?: unknown
+  xRefreshToken?: unknown
   clientId?: unknown
   clientSecret?: unknown
 }
@@ -150,6 +154,8 @@ export async function POST(req: NextRequest) {
     // プラットフォーム別の user_id 解決
     let threadsUserId: string | null = null
     let instagramUserId: string | null = null
+    let xUserId: string | null = null
+    let xRefreshToken: string | null = null
 
     if (platform === 'threads') {
       threadsUserId = sanitizeStr(body.threadsUserId, MAX_USER_ID)
@@ -171,13 +177,27 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: msg }, { status: 400 })
         }
       }
-      // IG Business Account ID は数値文字列のみ
       if (instagramUserId && !/^\d+$/.test(instagramUserId)) {
         return NextResponse.json(
           { error: 'Instagram Business Account ID は数字のみ使用できます' },
           { status: 400 },
         )
       }
+    } else if (platform === 'x') {
+      xUserId = sanitizeStr(body.xUserId, MAX_USER_ID)
+      if (!xUserId) {
+        try {
+          const me = await getXMe(accessTokenRaw)
+          xUserId = me.id
+        } catch (e) {
+          console.error('[accounts POST x/users/me]', e instanceof Error ? e.message : 'unknown')
+          return NextResponse.json(
+            { error: 'X のアクセストークンが無効です。トークンを確認するか、OAuth 連携をお試しください' },
+            { status: 400 },
+          )
+        }
+      }
+      xRefreshToken = sanitizeStr(body.xRefreshToken, MAX_TOKEN) || null
     }
 
     const { data, error } = await supabase
@@ -195,6 +215,8 @@ export async function POST(req: NextRequest) {
         threads_client_id: clientId,
         threads_client_secret: clientSecret,
         instagram_user_id: instagramUserId,
+        x_user_id: xUserId,
+        x_refresh_token: xRefreshToken,
         is_active: true,
       })
       .select(PUBLIC_ACCOUNT_COLUMNS)

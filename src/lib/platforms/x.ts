@@ -1,9 +1,10 @@
-// X API v2 adapter
+// X (Twitter) API v2 adapter
 // Docs: https://developer.twitter.com/en/docs/twitter-api/tweets/manage-tweets/api-reference/post-tweets
 
 const X_API_BASE = 'https://api.twitter.com/2'
 const X_AUTH_BASE = 'https://twitter.com/i/oauth2'
 const X_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token'
+const REQUEST_TIMEOUT_MS = 30_000
 
 export const X_SCOPES = 'tweet.write tweet.read users.read offline.access'
 
@@ -18,6 +19,13 @@ interface XTweetResult {
   text: string
 }
 
+export class XAuthError extends Error {
+  constructor(message = 'X access token expired or invalid') {
+    super(message)
+    this.name = 'XAuthError'
+  }
+}
+
 async function xRequest<T>(
   path: string,
   accessToken: string,
@@ -30,13 +38,17 @@ async function xRequest<T>(
       'Content-Type': 'application/json',
       ...options.headers,
     },
+    signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ title: res.statusText }))
-    throw new Error(`X API error ${res.status}: ${JSON.stringify(err)}`)
+    const errText = await res.text().catch(() => '')
+    console.error('[X API]', path, res.status, errText)
+    if (res.status === 401 || res.status === 403) {
+      throw new XAuthError()
+    }
+    throw new Error(`X API error (HTTP ${res.status})`)
   }
-
   return res.json() as Promise<T>
 }
 
@@ -77,17 +89,11 @@ export async function getXMe(accessToken: string) {
   return result.data
 }
 
-export async function refreshXToken(
+async function tokenRequest(
   clientId: string,
   clientSecret: string,
-  refreshToken: string
+  params: URLSearchParams
 ): Promise<XTokens> {
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-    client_id: clientId,
-  })
-
   const res = await fetch(X_TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -95,11 +101,13 @@ export async function refreshXToken(
       Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
     },
     body: params.toString(),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`X token refresh failed: ${JSON.stringify(err)}`)
+    const errText = await res.text().catch(() => '')
+    console.error('[X token]', res.status, errText)
+    throw new XAuthError(`X token request failed (HTTP ${res.status})`)
   }
 
   const data = await res.json() as {
@@ -113,6 +121,34 @@ export async function refreshXToken(
     refreshToken: data.refresh_token,
     expiresAt: Date.now() + data.expires_in * 1000,
   }
+}
+
+export async function refreshXToken(
+  clientId: string,
+  clientSecret: string,
+  refreshToken: string
+): Promise<XTokens> {
+  return tokenRequest(clientId, clientSecret, new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: clientId,
+  }))
+}
+
+export async function exchangeXCode(params: {
+  code: string
+  codeVerifier: string
+  redirectUri: string
+  clientId: string
+  clientSecret: string
+}): Promise<XTokens> {
+  return tokenRequest(params.clientId, params.clientSecret, new URLSearchParams({
+    grant_type: 'authorization_code',
+    code: params.code,
+    redirect_uri: params.redirectUri,
+    code_verifier: params.codeVerifier,
+    client_id: params.clientId,
+  }))
 }
 
 export function buildXAuthUrl(params: {
@@ -130,48 +166,6 @@ export function buildXAuthUrl(params: {
   url.searchParams.set('code_challenge', params.codeChallenge)
   url.searchParams.set('code_challenge_method', 'S256')
   return url.toString()
-}
-
-export async function exchangeXCode(params: {
-  code: string
-  codeVerifier: string
-  redirectUri: string
-  clientId: string
-  clientSecret: string
-}): Promise<XTokens> {
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code: params.code,
-    redirect_uri: params.redirectUri,
-    code_verifier: params.codeVerifier,
-    client_id: params.clientId,
-  })
-
-  const res = await fetch(X_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${Buffer.from(`${params.clientId}:${params.clientSecret}`).toString('base64')}`,
-    },
-    body: body.toString(),
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`X token exchange failed: ${JSON.stringify(err)}`)
-  }
-
-  const data = await res.json() as {
-    access_token: string
-    refresh_token: string
-    expires_in: number
-  }
-
-  return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  }
 }
 
 export function generateCodeVerifier(): string {

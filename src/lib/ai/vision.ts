@@ -5,6 +5,7 @@
  */
 
 const VISION_MODEL = 'google/gemini-2.0-flash-001'
+const REQUEST_TIMEOUT_MS = 30_000
 
 const SYSTEM_PROMPT = `You analyze an image's *visual design structure* to be used as a reference template for generating a NEW image with different content.
 
@@ -49,11 +50,13 @@ export async function analyzeImageStructure(imageBase64: string, mimeType = 'ima
         },
       ],
     }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
   if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Vision API error ${res.status}: ${err.slice(0, 200)}`)
+    const errText = await res.text().catch(() => '')
+    console.error('[Vision API]', res.status, errText)
+    throw new Error(`Vision API error (HTTP ${res.status})`)
   }
 
   const json = await res.json() as { choices: Array<{ message: { content: string } }> }

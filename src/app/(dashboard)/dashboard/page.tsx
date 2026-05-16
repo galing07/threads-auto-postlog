@@ -45,7 +45,7 @@ export default function DashboardPage() {
         <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>
           ダッシュボード
         </h1>
-        <p className="mt-0.5 text-sm text-gray-500">SNS自動投稿の管理センター（Threads / TikTok）</p>
+        <p className="mt-0.5 text-sm text-gray-500">SNS自動投稿の管理センター（Threads / Instagram / X）</p>
       </div>
 
       {/* KPI cards */}

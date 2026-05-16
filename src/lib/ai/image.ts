@@ -1,20 +1,31 @@
 import OpenAI from 'openai'
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 interface GenerateImageOptions {
   prompt: string
   style?: 'diagram' | 'infographic' | 'minimal'
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ImageGenerateFn = (p: any) => Promise<{ data: Array<{ b64_json?: string }> }>
+// OpenAI SDK の型に厳密に依存しすぎず、必要な戻り値だけ拾う
+type ImageGenerateFn = (p: Record<string, unknown>) => Promise<{
+  data?: Array<{ b64_json?: string }>
+}>
 
-async function callWithRetry(fn: () => Promise<{ data: Array<{ b64_json?: string }> }>, retries = 1): Promise<{ data: Array<{ b64_json?: string }> }> {
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
+
+function isRetryableError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false
+  // OpenAI SDK は APIError に status を載せている
+  const status = (e as Error & { status?: number }).status
+  if (typeof status === 'number') return RETRYABLE_STATUS.has(status)
+  return /\b(5\d{2}|429|408)\b/.test(e.message)
+}
+
+async function callWithRetry<T>(fn: () => Promise<T>, retries = 1): Promise<T> {
   try {
     return await fn()
   } catch (e) {
-    const msg = e instanceof Error ? e.message : ''
-    if (retries > 0 && msg.includes('500')) {
+    if (retries > 0 && isRetryableError(e)) {
       await new Promise(r => setTimeout(r, 2000))
       return callWithRetry(fn, retries - 1)
     }
@@ -22,11 +33,12 @@ async function callWithRetry(fn: () => Promise<{ data: Array<{ b64_json?: string
   }
 }
 
-async function uploadToStorage(b64: string, ext: string, contentType: string): Promise<string> {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+export async function uploadGeneratedImage(
+  b64: string,
+  ext: string,
+  contentType: string,
+): Promise<string> {
+  const supabase = createAdminClient()
   const fileName = `generated/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
   const buffer = Buffer.from(b64, 'base64')
 
@@ -67,8 +79,8 @@ export async function generateDiagramImage({
     })
   )
 
-  const b64 = response.data[0]?.b64_json
+  const b64 = response.data?.[0]?.b64_json
   if (!b64) throw new Error('画像データが取得できませんでした')
 
-  return uploadToStorage(b64, 'png', 'image/png')
+  return uploadGeneratedImage(b64, 'png', 'image/png')
 }
