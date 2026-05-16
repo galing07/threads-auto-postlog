@@ -1,15 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CheckCircle, AlertCircle, PenLine, Send, FileText, ChevronDown, ChevronUp, ImageIcon, User, RefreshCw } from 'lucide-react'
+import { CheckCircle, AlertCircle, PenLine, Send, FileText, ChevronDown, ChevronUp, ImageIcon, User, RefreshCw, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { cx } from '@/lib/utils'
-import type { PostWithAccount } from '@/types/database'
+import type { PostStatus, PostWithAccount } from '@/types/database'
 
-const STATUS_CONFIG = {
-  draft:  { label: '下書き',   cls: 'bg-gray-100 text-gray-600',  Icon: PenLine },
-  posted: { label: '投稿済み', cls: 'bg-green-50 text-green-700', Icon: CheckCircle },
-  failed: { label: 'エラー',   cls: 'bg-red-50 text-red-600',     Icon: AlertCircle },
+const STATUS_CONFIG: Record<PostStatus, { label: string; cls: string; Icon: typeof PenLine }> = {
+  draft:      { label: '下書き',   cls: 'bg-gray-100 text-gray-600',    Icon: PenLine },
+  publishing: { label: '投稿中',   cls: 'bg-blue-50 text-blue-600',     Icon: Loader2 },
+  posted:     { label: '投稿済み', cls: 'bg-green-50 text-green-700',   Icon: CheckCircle },
+  failed:     { label: 'エラー',   cls: 'bg-red-50 text-red-600',       Icon: AlertCircle },
 }
 
 function formatDate(iso: string) {

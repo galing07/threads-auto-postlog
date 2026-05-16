@@ -12,9 +12,10 @@ import { cx } from '@/lib/utils'
 import type { Post } from '@/types/database'
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  draft:     { label: '下書き',   cls: 'bg-gray-100 text-gray-600' },
-  posted:    { label: '投稿済み', cls: 'bg-green-50 text-green-700' },
-  failed:    { label: 'エラー',   cls: 'bg-red-50 text-red-600' },
+  draft:      { label: '下書き',   cls: 'bg-gray-100 text-gray-600' },
+  publishing: { label: '投稿中',   cls: 'bg-blue-50 text-blue-600' },
+  posted:     { label: '投稿済み', cls: 'bg-green-50 text-green-700' },
+  failed:     { label: 'エラー',   cls: 'bg-red-50 text-red-600' },
 }
 
 function formatDate(iso: string) {
