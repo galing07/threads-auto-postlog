@@ -298,7 +298,7 @@ export default function AccountsPage() {
           <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>
             アカウント
           </h1>
-          <p className="mt-0.5 text-sm text-gray-500">Threadsアカウントとペルソナを管理します</p>
+          <p className="mt-0.5 text-sm text-gray-500">Threads / Instagram / X のアカウントとペルソナを管理します</p>
         </div>
         <Button onClick={() => setShowForm(true)} className="gap-2">
           <Plus className="h-4 w-4" />
