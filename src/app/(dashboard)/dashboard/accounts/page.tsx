@@ -164,7 +164,6 @@ export default function AccountsPage() {
     threadsUserId: '',
     instagramUserId: '',
     xUserId: '',
-    xRefreshToken: '',
     clientId: '',
     clientSecret: '',
   })
@@ -183,7 +182,6 @@ export default function AccountsPage() {
       threadsUserId: '',
       instagramUserId: '',
       xUserId: '',
-      xRefreshToken: '',
       clientId: '',
       clientSecret: '',
     })
@@ -220,7 +218,6 @@ export default function AccountsPage() {
           threadsUserId: form.threadsUserId,
           instagramUserId: form.instagramUserId,
           xUserId: form.xUserId,
-          xRefreshToken: form.xRefreshToken,
           clientId: form.clientId,
           clientSecret: form.clientSecret,
         }),
@@ -475,28 +472,14 @@ export default function AccountsPage() {
                     </div>
                   )}
                   {platform === 'x' && (
-                    <>
-                      <div>
-                        <FieldLabel optional>X User ID</FieldLabel>
-                        <Input
-                          value={form.xUserId}
-                          onChange={e => setForm(f => ({ ...f, xUserId: e.target.value }))}
-                          placeholder="空欄なら /users/me から自動取得"
-                        />
-                      </div>
-                      <div>
-                        <FieldLabel optional>Refresh Token</FieldLabel>
-                        <Input
-                          type={showSecret ? 'text' : 'password'}
-                          value={form.xRefreshToken}
-                          onChange={e => setForm(f => ({ ...f, xRefreshToken: e.target.value }))}
-                          placeholder="設定するとトークン期限切れ時に自動更新"
-                        />
-                        <p className="mt-1 text-[10px] text-gray-400">
-                          offline.access スコープで取得した refresh_token があれば設定推奨
-                        </p>
-                      </div>
-                    </>
+                    <div>
+                      <FieldLabel optional>X User ID</FieldLabel>
+                      <Input
+                        value={form.xUserId}
+                        onChange={e => setForm(f => ({ ...f, xUserId: e.target.value }))}
+                        placeholder="空欄なら /users/me から自動取得"
+                      />
+                    </div>
                   )}
 
                   {platform === 'threads' && (

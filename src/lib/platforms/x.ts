@@ -1,16 +1,9 @@
 // X (Twitter) API v2 adapter
 // Docs: https://developer.twitter.com/en/docs/twitter-api/tweets/manage-tweets/api-reference/post-tweets
-// OAuth フローは廃止。アクセストークンは手動入力で受け取り、必要なら refresh のみ実行。
+// OAuth フロー / 自動リフレッシュは廃止。アクセストークンは手動入力で受け取る運用。
 
 const X_API_BASE = 'https://api.twitter.com/2'
-const X_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token'
 const REQUEST_TIMEOUT_MS = 30_000
-
-export interface XTokens {
-  accessToken: string
-  refreshToken: string
-  expiresAt: number
-}
 
 interface XTweetResult {
   id: string
@@ -87,46 +80,3 @@ export async function getXMe(accessToken: string) {
   return result.data
 }
 
-/**
- * refresh_token と client_id/client_secret から access_token を再取得する。
- * 手動入力経路で refresh_token を持っているユーザー向け（X_CLIENT_ID/SECRET の env が必要）。
- */
-export async function refreshXToken(
-  clientId: string,
-  clientSecret: string,
-  refreshToken: string
-): Promise<XTokens> {
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-    client_id: clientId,
-  })
-
-  const res = await fetch(X_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
-    },
-    body: params.toString(),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    console.error('[X token refresh]', res.status, errText)
-    throw new XAuthError(`X token refresh failed (HTTP ${res.status})`)
-  }
-
-  const data = await res.json() as {
-    access_token: string
-    refresh_token: string
-    expires_in: number
-  }
-
-  return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  }
-}

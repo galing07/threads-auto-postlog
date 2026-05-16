@@ -26,9 +26,6 @@ SUPABASE_SERVICE_ROLE_KEY=xxxx
 NEXT_PUBLIC_APP_URL=https://your-domain.example
 OPENAI_API_KEY=sk-xxxx
 OPENROUTER_API_KEY=sk-or-xxxx
-# X (Twitter) の refresh_token を使う場合のみ（access_token のみで運用するなら不要）
-X_CLIENT_ID=xxxx
-X_CLIENT_SECRET=xxxx
 ```
 
 ### 2. Supabase DBセットアップ
@@ -41,7 +38,7 @@ X_CLIENT_SECRET=xxxx
 
 - **Threads**: [developers.facebook.com](https://developers.facebook.com) で App を作成し Threads API を追加 → long-lived access token を取得 → アプリの「アカウント管理」画面で登録。期限切れ時は publish 実行時に自動でリフレッシュされる。
 - **Instagram**: Instagram Business Account を Facebook Page に接続 → Graph API の access token を取得 → アプリで `instagram` を選んで登録（Business Account ID は自動取得）。
-- **X (Twitter)**: X Developer Portal で OAuth 2.0 アプリを作成し、ユーザー access_token を取得（scope: `tweet.write tweet.read users.read offline.access`）→ アプリの「アカウント追加」画面で X タブを開き、access_token を貼り付けて登録。refresh_token を併せて設定すると自動更新されます。
+- **X (Twitter)**: X Developer Portal で OAuth 2.0 アプリを作成し、ユーザー access_token を取得（scope: `tweet.write tweet.read users.read`）→ アプリの「アカウント追加」画面で X タブを開き、access_token を貼り付けて登録。期限切れ時は同じ手順でトークンを再登録してください（自動リフレッシュなし）。
 
 ### 4. 起動
 

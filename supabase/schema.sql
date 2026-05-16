@@ -23,7 +23,6 @@ CREATE TABLE accounts (
   instagram_user_id TEXT,
   -- X
   x_user_id TEXT,
-  x_refresh_token TEXT,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()

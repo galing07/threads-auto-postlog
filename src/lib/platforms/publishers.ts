@@ -7,7 +7,7 @@ import type { Account, Platform, Post } from '@/types/database'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { createThreadsPost, refreshThreadsToken, ThreadsAuthError } from './threads'
 import { createInstagramPost, InstagramAuthError } from './instagram'
-import { createXTweet, createXThread, refreshXToken, XAuthError } from './x'
+import { createXTweet, createXThread, XAuthError } from './x'
 
 export interface PublishContext {
   post: Pick<Post, 'id' | 'text_content' | 'image_url'>
@@ -117,31 +117,8 @@ async function tryRefreshToken(account: Account): Promise<boolean> {
     }
   }
 
-  if (account.platform === 'x') {
-    const clientId = process.env.X_CLIENT_ID
-    const clientSecret = process.env.X_CLIENT_SECRET
-    if (!clientId || !clientSecret || !account.x_refresh_token) return false
-    try {
-      const refreshed = await refreshXToken(clientId, clientSecret, account.x_refresh_token)
-      account.access_token = refreshed.accessToken
-      account.x_refresh_token = refreshed.refreshToken
-      account.token_expires_at = new Date(refreshed.expiresAt).toISOString()
-      await admin
-        .from('accounts')
-        .update({
-          access_token: refreshed.accessToken,
-          x_refresh_token: refreshed.refreshToken,
-          token_expires_at: new Date(refreshed.expiresAt).toISOString(),
-        })
-        .eq('id', account.id)
-      return true
-    } catch (e) {
-      console.error('[publishers] X refresh failed', e instanceof Error ? e.message : 'unknown')
-      return false
-    }
-  }
-
-  // Instagram は long-lived token の refresh は別 endpoint だが頻度が低いので一旦未対応
+  // X は手動入力トークン運用なので refresh は実施しない（期限切れ時は再連携してもらう）
+  // Instagram も long-lived token の refresh は頻度が低く未対応
   return false
 }
 

@@ -18,7 +18,6 @@ export interface Account {
   threads_client_secret: string | null
   instagram_user_id: string | null
   x_user_id: string | null
-  x_refresh_token: string | null
   is_active: boolean
   created_at: string
   updated_at: string

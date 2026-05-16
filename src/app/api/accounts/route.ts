@@ -18,6 +18,8 @@ const PUBLIC_ACCOUNT_COLUMNS = [
   'instagram_user_id',
   'x_user_id',
   'is_active',
+  // x_refresh_token は機密扱いで返さない
+
   'created_at',
   'updated_at',
 ].join(',')
@@ -82,7 +84,6 @@ interface CreateAccountBody {
   threadsUserId?: unknown
   instagramUserId?: unknown
   xUserId?: unknown
-  xRefreshToken?: unknown
   clientId?: unknown
   clientSecret?: unknown
 }
@@ -155,7 +156,6 @@ export async function POST(req: NextRequest) {
     let threadsUserId: string | null = null
     let instagramUserId: string | null = null
     let xUserId: string | null = null
-    let xRefreshToken: string | null = null
 
     if (platform === 'threads') {
       threadsUserId = sanitizeStr(body.threadsUserId, MAX_USER_ID)
@@ -192,12 +192,11 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           console.error('[accounts POST x/users/me]', e instanceof Error ? e.message : 'unknown')
           return NextResponse.json(
-            { error: 'X のアクセストークンが無効です。トークンを確認するか、OAuth 連携をお試しください' },
+            { error: 'X のアクセストークンが無効です。トークンを確認してください' },
             { status: 400 },
           )
         }
       }
-      xRefreshToken = sanitizeStr(body.xRefreshToken, MAX_TOKEN) || null
     }
 
     const { data, error } = await supabase
@@ -216,7 +215,6 @@ export async function POST(req: NextRequest) {
         threads_client_secret: clientSecret,
         instagram_user_id: instagramUserId,
         x_user_id: xUserId,
-        x_refresh_token: xRefreshToken,
         is_active: true,
       })
       .select(PUBLIC_ACCOUNT_COLUMNS)
