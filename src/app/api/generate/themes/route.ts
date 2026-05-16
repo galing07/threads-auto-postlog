@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { fetchAccountPromptExtra, appendUserExtra } from '@/lib/ai/prompt-settings'
+import { requireApiKey, MissingApiKeyError } from '@/lib/ai/api-keys'
 import type { Account } from '@/types/database'
 
 const DEMO_ACCOUNT: Pick<Account, 'persona' | 'tone' | 'target_audience' | 'post_topics'> = {
@@ -29,8 +30,7 @@ export async function POST(req: NextRequest) {
       if (data) account = data
     }
 
-    const apiKey = process.env.OPENROUTER_API_KEY
-    if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured')
+    const apiKey = await requireApiKey('openrouter')
 
     // 既存投稿のテーマ一覧を取得（重複回避用）
     const { data: existingPosts } = await supabase
@@ -100,6 +100,9 @@ export async function POST(req: NextRequest) {
     const themes = extractStringArray(text)
     return NextResponse.json({ themes })
   } catch (e) {
+    if (e instanceof MissingApiKeyError) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
     console.error('[generate/themes]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: 'テーマ生成に失敗しました' }, { status: 500 })
   }

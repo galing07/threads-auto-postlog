@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 interface GenerateImageOptions {
   prompt: string
   style?: 'diagram' | 'infographic' | 'minimal'
+  apiKey: string
 }
 
 // OpenAI SDK の型に厳密に依存しすぎず、必要な戻り値だけ拾う
@@ -59,8 +60,9 @@ export async function uploadGeneratedImage(
 export async function generateDiagramImage({
   prompt,
   style = 'diagram',
+  apiKey,
 }: GenerateImageOptions): Promise<string> {
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const client = new OpenAI({ apiKey })
 
   const styleGuide: Record<string, string> = {
     diagram:     'Clean diagram infographic, flat design, white background, Japanese career advice, minimal icons, pastel colors, professional layout',

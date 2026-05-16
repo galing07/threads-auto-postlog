@@ -11,6 +11,7 @@ import {
   Zap,
   FileText,
   Sparkles,
+  Settings,
 } from 'lucide-react'
 import { cx } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
@@ -22,6 +23,7 @@ const navItems = [
   { href: '/dashboard/accounts', label: 'アカウント', icon: Users },
   { href: '/dashboard/prompts', label: 'プロンプト', icon: Sparkles },
   { href: '/dashboard/logs', label: 'ログ', icon: ScrollText },
+  { href: '/dashboard/settings', label: '設定', icon: Settings },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

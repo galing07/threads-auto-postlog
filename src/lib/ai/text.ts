@@ -18,6 +18,8 @@ interface GenerateTextOptions {
   referenceAccountName?: string
   /** ユーザーがプロンプト設定ページで保存した追加指示 */
   userExtra?: string | null
+  /** OpenRouter API key (ユーザー登録のものを必須) */
+  apiKey: string
 }
 
 const postTypeGuide: Record<PostType, string> = {
@@ -159,10 +161,8 @@ export async function generateSNSText({
   referencePost,
   referenceAccountName,
   userExtra,
+  apiKey,
 }: GenerateTextOptions): Promise<GeneratedText> {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured')
-
   const persona = account.persona ?? '転職ノウハウ発信者'
   const tone = account.tone ?? 'friendly'
   const audience = account.target_audience ?? 'キャリアに不安のある高卒20代'

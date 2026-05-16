@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateDiagramImage } from '@/lib/ai/image'
 import { analyzeImageStructure } from '@/lib/ai/vision'
 import { fetchAccountPromptExtra } from '@/lib/ai/prompt-settings'
+import { fetchUserApiKeys, MissingApiKeyError } from '@/lib/ai/api-keys'
 
 const MAX_REF_IMAGE_BYTES = 7 * 1024 * 1024 // base64で約5MB相当
 const ALLOWED_REF_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
@@ -75,6 +76,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'prompt か postContent が必要です' }, { status: 400 })
     }
 
+    const keys = await fetchUserApiKeys()
+    if (!keys.openai) {
+      return NextResponse.json(
+        { error: 'OpenAI の API キーが設定されていません。「設定」ページから登録してください。' },
+        { status: 400 },
+      )
+    }
+
     // 参考画像があれば vision 分析して構造をプロンプトに合成
     let resolvedPrompt = basePrompt
     if (referenceImageBase64) {
@@ -85,8 +94,14 @@ export async function POST(req: NextRequest) {
       if (!ALLOWED_REF_MIME.has(mime)) {
         return NextResponse.json({ error: '対応していない画像形式です' }, { status: 400 })
       }
+      if (!keys.openrouter) {
+        return NextResponse.json(
+          { error: '参考画像を使うには OpenRouter の API キー設定が必要です' },
+          { status: 400 },
+        )
+      }
       try {
-        const structure = await analyzeImageStructure(referenceImageBase64, mime)
+        const structure = await analyzeImageStructure(referenceImageBase64, mime, keys.openrouter)
         if (structure) {
           resolvedPrompt = `${basePrompt}\n\nApply this visual design style as reference (do NOT copy text or specific subject matter, only the visual structure):\n${structure}`
         }
@@ -104,9 +119,12 @@ export async function POST(req: NextRequest) {
 ${userExtra.slice(0, 3000)}`
     }
 
-    const imageUrl = await generateDiagramImage({ prompt: resolvedPrompt, style })
+    const imageUrl = await generateDiagramImage({ prompt: resolvedPrompt, style, apiKey: keys.openai })
     return NextResponse.json({ imageUrl })
   } catch (e) {
+    if (e instanceof MissingApiKeyError) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
     console.error('[generate/image]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: '画像生成に失敗しました' }, { status: 500 })
   }

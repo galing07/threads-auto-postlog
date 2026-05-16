@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { uploadGeneratedImage } from '@/lib/ai/image'
+import { requireApiKey, MissingApiKeyError } from '@/lib/ai/api-keys'
 import OpenAI, { toFile } from 'openai'
 
 // OpenAI SDK の型は overload で複雑なので、必要な戻り値だけを取り出す薄いラッパー型
@@ -76,7 +77,8 @@ export async function POST(req: NextRequest) {
     }
     const imgBuffer = Buffer.from(arrayBuffer)
 
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    const openaiKey = await requireApiKey('openai')
+    const client = new OpenAI({ apiKey: openaiKey })
 
     let response: { data?: Array<{ b64_json?: string }> } | null = null
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -106,6 +108,9 @@ export async function POST(req: NextRequest) {
     const publicUrl = await uploadGeneratedImage(b64, 'png', 'image/png')
     return NextResponse.json({ imageUrl: publicUrl })
   } catch (e) {
+    if (e instanceof MissingApiKeyError) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
     console.error('[generate/image/edit]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: '画像編集に失敗しました' }, { status: 500 })
   }

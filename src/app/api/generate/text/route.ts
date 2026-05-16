@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateSNSText } from '@/lib/ai/text'
 import { fetchAccountPromptExtra } from '@/lib/ai/prompt-settings'
+import { requireApiKey, MissingApiKeyError } from '@/lib/ai/api-keys'
 import type { Account } from '@/types/database'
 
 // アカウントなし時のデフォルト設定
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
     }
 
+    const apiKey = await requireApiKey('openrouter')
     const userExtra = await fetchAccountPromptExtra(accountId, 'text')
 
     const result = await generateSNSText({
@@ -93,9 +95,13 @@ export async function POST(req: NextRequest) {
       referencePost,
       referenceAccountName,
       userExtra,
+      apiKey,
     })
     return NextResponse.json(result)
   } catch (e) {
+    if (e instanceof MissingApiKeyError) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
     console.error('[generate/text]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: '生成に失敗しました' }, { status: 500 })
   }

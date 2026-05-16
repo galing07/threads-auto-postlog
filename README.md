@@ -24,9 +24,10 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=xxxx
 SUPABASE_SERVICE_ROLE_KEY=xxxx
 NEXT_PUBLIC_APP_URL=https://your-domain.example
-OPENAI_API_KEY=sk-xxxx
-OPENROUTER_API_KEY=sk-or-xxxx
 ```
+
+> **API キーは個別ユーザーが UI で登録** します。
+> ログイン後、サイドバーの「設定」ページから OpenRouter / OpenAI のキーを保存してください。
 
 ### 2. Supabase DBセットアップ
 

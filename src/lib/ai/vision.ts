@@ -21,9 +21,12 @@ DO NOT describe specific text content, names, or subject matter.
 Focus ONLY on reusable structural & stylistic patterns.
 Start the paragraph directly. No preface like "This image shows".`
 
-export async function analyzeImageStructure(imageBase64: string, mimeType = 'image/png'): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured')
+export async function analyzeImageStructure(
+  imageBase64: string,
+  mimeType = 'image/png',
+  apiKey?: string,
+): Promise<string> {
+  if (!apiKey) throw new Error('OpenRouter API key is required')
 
   // base64 が data URI の場合は剥がす
   const cleanBase64 = imageBase64.replace(/^data:image\/[^;]+;base64,/, '')

@@ -71,6 +71,14 @@ CREATE TABLE post_themes (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ユーザーごとの外部 AI API キー（OpenRouter / OpenAI）
+CREATE TABLE user_api_keys (
+  user_id UUID PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
+  openrouter_key TEXT,
+  openai_key TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- アカウントごとのカスタムプロンプト設定
 -- 既存のシステムプロンプトに「追加指示」として混ぜる
 CREATE TABLE account_prompt_settings (
@@ -112,6 +120,13 @@ ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_themes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reference_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_api_keys ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "user_api_keys: own data only"
+  ON user_api_keys FOR ALL
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
 ALTER TABLE account_prompt_settings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "account_prompt_settings: own accounts only"
