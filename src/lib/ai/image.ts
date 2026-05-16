@@ -7,7 +7,8 @@ interface GenerateImageOptions {
 }
 
 // OpenAI SDK の型に厳密に依存しすぎず、必要な戻り値だけ拾う
-type ImageGenerateFn = (p: Record<string, unknown>) => Promise<{
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ImageGenerateFn = (p: any) => Promise<{
   data?: Array<{ b64_json?: string }>
 }>
 

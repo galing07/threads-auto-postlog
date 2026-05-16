@@ -3,7 +3,9 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import { uploadGeneratedImage } from '@/lib/ai/image'
 import OpenAI, { toFile } from 'openai'
 
-type ImageEditFn = (p: Record<string, unknown>) => Promise<{
+// OpenAI SDK の型は overload で複雑なので、必要な戻り値だけを取り出す薄いラッパー型
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ImageEditFn = (p: any) => Promise<{
   data?: Array<{ b64_json?: string }>
 }>
 
