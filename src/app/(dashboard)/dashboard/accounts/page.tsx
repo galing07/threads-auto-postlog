@@ -62,7 +62,7 @@ const SETUP_GUIDES: Record<SupportedPlatform, SetupGuide> = {
     ],
   },
   x: {
-    intro: 'X は Meta とは無関係です。X 専用の開発者ポータルで設定します（このアプリの「かんたん連携」は廃止したので手動でトークンを貼ります）。',
+    intro: '',
     links: [
       { label: 'X Developer Portal を開く', href: 'https://developer.x.com/en/portal/dashboard' },
     ],
@@ -90,7 +90,7 @@ function SetupGuide({ platform, defaultOpen }: { platform: SupportedPlatform; de
         トークンの取得手順{open ? 'を隠す' : 'を見る'}（クリックで開閉）
       </summary>
       <div className="mt-2.5 space-y-2.5">
-        <p className="text-[11px] leading-relaxed text-gray-600">{g.intro}</p>
+        {g.intro && <p className="text-[11px] leading-relaxed text-gray-600">{g.intro}</p>}
         <div className="flex flex-wrap gap-1.5">
           {g.links.map(l => (
             <a
