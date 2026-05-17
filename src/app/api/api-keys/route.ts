@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { maskApiKey } from '@/lib/ai/api-keys'
+import { encryptSecret, decryptSecret, isEncryptionAvailable } from '@/lib/crypto'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 const MAX_KEY_LEN = 500
 
@@ -22,6 +24,22 @@ function emptyResponse(): ResponseShape {
   }
 }
 
+function toResponse(
+  openrouterStored: string | null,
+  openaiStored: string | null,
+  updatedAt: string | null,
+): ResponseShape {
+  const or = decryptSecret(openrouterStored)
+  const oa = decryptSecret(openaiStored)
+  return {
+    openrouter_masked: maskApiKey(or),
+    openai_masked: maskApiKey(oa),
+    has_openrouter: !!or,
+    has_openai: !!oa,
+    updated_at: updatedAt,
+  }
+}
+
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient()
@@ -35,32 +53,30 @@ export async function GET() {
       .maybeSingle()
 
     if (!data) return NextResponse.json(emptyResponse())
-
-    const orKey = typeof data.openrouter_key === 'string' && data.openrouter_key.trim() ? data.openrouter_key.trim() : null
-    const oaKey = typeof data.openai_key === 'string' && data.openai_key.trim() ? data.openai_key.trim() : null
-
-    const resp: ResponseShape = {
-      openrouter_masked: maskApiKey(orKey),
-      openai_masked: maskApiKey(oaKey),
-      has_openrouter: !!orKey,
-      has_openai: !!oaKey,
-      updated_at: data.updated_at ?? null,
-    }
-    return NextResponse.json(resp)
+    return NextResponse.json(
+      toResponse(data.openrouter_key, data.openai_key, data.updated_at ?? null),
+    )
   } catch (e) {
     console.error('[api-keys GET]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: '取得に失敗しました' }, { status: 500 })
   }
 }
 
-function clamp(v: unknown, fallback?: string | null): string | null | undefined {
-  // undefined → 既存値を保持（パッチ的挙動）
-  if (v === undefined) return fallback
+/**
+ * 値を保存用に正規化:
+ *  - undefined / 空文字 → "変更しない" (= symbol KEEP)
+ *  - null → 削除 (DB NULL)
+ *  - string → 暗号化して保存
+ */
+const KEEP = Symbol('keep')
+
+function normalize(v: unknown): string | null | typeof KEEP {
+  if (v === undefined) return KEEP
   if (v === null) return null
-  if (typeof v !== 'string') return null
+  if (typeof v !== 'string') return KEEP
   const trimmed = v.trim()
-  if (!trimmed) return null
-  return trimmed.slice(0, MAX_KEY_LEN)
+  if (!trimmed) return KEEP // 空欄は誤削除防止のため「変更しない」
+  return encryptSecret(trimmed.slice(0, MAX_KEY_LEN))
 }
 
 export async function PUT(req: NextRequest) {
@@ -69,40 +85,65 @@ export async function PUT(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
+    const rl = await checkRateLimit(user.id, 'api_keys', RATE_LIMITS.apiKeys.limit, RATE_LIMITS.apiKeys.windowSeconds)
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: '更新が多すぎます。しばらくしてからお試しください。', code: 'RATE_LIMITED' },
+        { status: 429 },
+      )
+    }
+
+    if (!isEncryptionAvailable()) {
+      console.error('[api-keys PUT] ENCRYPTION_KEY not configured')
+      return NextResponse.json(
+        { error: 'サーバー側の暗号化設定が未完了です。管理者にお問い合わせください。' },
+        { status: 503 },
+      )
+    }
+
     const body = await req.json() as {
       openrouterKey?: unknown
       openaiKey?: unknown
     }
 
-    // 各キーは clamp 結果が undefined（フィールド未指定）なら既存値を保持
+    const orVal = normalize(body.openrouterKey)
+    const oaVal = normalize(body.openaiKey)
+
+    // 既存行の有無で insert / update を分岐（部分更新でアトミック性を保つ）
     const { data: existing } = await supabase
       .from('user_api_keys')
       .select('openrouter_key, openai_key')
       .eq('user_id', user.id)
       .maybeSingle()
 
-    const openrouterKey = clamp(body.openrouterKey, existing?.openrouter_key ?? null)
-    const openaiKey = clamp(body.openaiKey, existing?.openai_key ?? null)
+    const nowIso = new Date().toISOString()
+
+    if (!existing) {
+      const { error } = await supabase.from('user_api_keys').insert({
+        user_id: user.id,
+        openrouter_key: orVal === KEEP ? null : orVal,
+        openai_key: oaVal === KEEP ? null : oaVal,
+        updated_at: nowIso,
+      })
+      if (error) throw error
+      return NextResponse.json(
+        toResponse(orVal === KEEP ? null : orVal, oaVal === KEEP ? null : oaVal, nowIso),
+      )
+    }
+
+    const updates: Record<string, string | null> = { updated_at: nowIso }
+    if (orVal !== KEEP) updates.openrouter_key = orVal
+    if (oaVal !== KEEP) updates.openai_key = oaVal
 
     const { error } = await supabase
       .from('user_api_keys')
-      .upsert({
-        user_id: user.id,
-        openrouter_key: openrouterKey,
-        openai_key: openaiKey,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
-
+      .update(updates)
+      .eq('user_id', user.id)
     if (error) throw error
 
-    const resp: ResponseShape = {
-      openrouter_masked: maskApiKey(openrouterKey ?? null),
-      openai_masked: maskApiKey(openaiKey ?? null),
-      has_openrouter: !!openrouterKey,
-      has_openai: !!openaiKey,
-      updated_at: new Date().toISOString(),
-    }
-    return NextResponse.json(resp)
+    const finalOr = orVal === KEEP ? existing.openrouter_key : orVal
+    const finalOa = oaVal === KEEP ? existing.openai_key : oaVal
+    return NextResponse.json(toResponse(finalOr, finalOa, nowIso))
   } catch (e) {
     console.error('[api-keys PUT]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: '保存に失敗しました' }, { status: 500 })

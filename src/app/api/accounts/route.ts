@@ -18,10 +18,10 @@ const PUBLIC_ACCOUNT_COLUMNS = [
   'instagram_user_id',
   'x_user_id',
   'is_active',
-  // x_refresh_token は機密扱いで返さない
-
   'created_at',
   'updated_at',
+  // 機密のため意図的に除外（絶対にこの配列へ足さない）:
+  //   access_token / threads_client_id / threads_client_secret / x_refresh_token(削除済)
 ].join(',')
 
 const MAX_NAME = 100
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
       platform = body.platform
     } else {
       return NextResponse.json(
-        { error: `サポートされていないプラットフォームです（threads / instagram のみ）` },
+        { error: 'サポートされていないプラットフォームです（threads / instagram / x のみ）' },
         { status: 400 },
       )
     }

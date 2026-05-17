@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { cx } from '@/lib/utils'
+import { useToast } from '@/components/ui/Toast'
 import type { Account, Post, ReferenceAccount } from '@/types/database'
 
 type Step = 'input' | 'preview' | 'done'
@@ -33,6 +34,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 export default function ThreadsGeneratePage() {
+  const toast = useToast()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [selectedAccount, setSelectedAccount] = useState('')
   const [theme, setTheme] = useState('')
@@ -68,7 +70,7 @@ export default function ThreadsGeneratePage() {
       })
       .catch(e => {
         console.error('[generate/threads] initial load failed', e)
-        alert('アカウント情報の取得に失敗しました。再読み込みしてください。')
+        toast.error('アカウント情報の取得に失敗しました。再読み込みしてください。')
       })
   }, [])
 
@@ -88,7 +90,7 @@ export default function ThreadsGeneratePage() {
       if (data.error) throw new Error(data.error)
       setThemeSuggestions(data.themes ?? [])
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'テーマ生成に失敗しました')
+      toast.error(e instanceof Error ? e.message : 'テーマ生成に失敗しました')
     } finally {
       setSuggestLoading(false)
     }
@@ -117,7 +119,7 @@ export default function ThreadsGeneratePage() {
       setGeneratedSummary(data.summary ?? '')
       setStep('preview')
     } catch (e) {
-      alert(e instanceof Error ? e.message : '生成に失敗しました')
+      toast.error(e instanceof Error ? e.message : '生成に失敗しました')
     } finally {
       setLoading(false)
     }
@@ -142,7 +144,7 @@ export default function ThreadsGeneratePage() {
       if (data.error) throw new Error(data.error)
       setImageUrl(data.imageUrl)
     } catch (e) {
-      alert(e instanceof Error ? e.message : '画像生成に失敗しました')
+      toast.error(e instanceof Error ? e.message : '画像生成に失敗しました')
     } finally {
       setImageLoading(false)
     }
@@ -162,15 +164,15 @@ export default function ThreadsGeneratePage() {
       setImageUrl(data.imageUrl)
       setImageEditPrompt('')
     } catch (e) {
-      alert(e instanceof Error ? e.message : '画像編集に失敗しました')
+      toast.error(e instanceof Error ? e.message : '画像編集に失敗しました')
     } finally {
       setImageEditing(false)
     }
   }
 
   function handleReferenceImageUpload(file: File) {
-    if (file.size > 5 * 1024 * 1024) { alert('画像サイズは5MB以下にしてください'); return }
-    if (!file.type.startsWith('image/')) { alert('画像ファイルを選択してください'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('画像サイズは5MB以下にしてください'); return }
+    if (!file.type.startsWith('image/')) { toast.error('画像ファイルを選択してください'); return }
     const reader = new FileReader()
     reader.onload = () => {
       const result = reader.result as string
@@ -204,7 +206,7 @@ export default function ThreadsGeneratePage() {
       }
       setStep('done')
     } catch (e) {
-      alert(e instanceof Error ? e.message : '保存に失敗しました')
+      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
       setLoading(false)
     }

@@ -1,5 +1,6 @@
 import 'server-only'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { decryptSecret } from '@/lib/crypto'
 
 export type ApiKeyProvider = 'openrouter' | 'openai'
 
@@ -34,10 +35,8 @@ export async function fetchUserApiKeys(): Promise<FetchedKeys> {
 
     if (!data) return empty
     return {
-      openrouter: typeof data.openrouter_key === 'string' && data.openrouter_key.trim()
-        ? data.openrouter_key.trim() : null,
-      openai: typeof data.openai_key === 'string' && data.openai_key.trim()
-        ? data.openai_key.trim() : null,
+      openrouter: decryptSecret(data.openrouter_key)?.trim() || null,
+      openai: decryptSecret(data.openai_key)?.trim() || null,
     }
   } catch (e) {
     console.error('[api-keys fetch]', e instanceof Error ? e.message : 'unknown')
@@ -60,6 +59,6 @@ export async function requireApiKey(provider: ApiKeyProvider): Promise<string> {
  */
 export function maskApiKey(key: string | null): string | null {
   if (!key) return null
-  if (key.length <= 12) return '••••••••'
-  return `${key.slice(0, 6)}...${key.slice(-4)}`
+  if (key.length < 16) return '••••••••'
+  return `${key.slice(0, 4)}…${key.slice(-4)}`
 }

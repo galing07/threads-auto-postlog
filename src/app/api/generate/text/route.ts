@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateSNSText } from '@/lib/ai/text'
 import { fetchAccountPromptExtra } from '@/lib/ai/prompt-settings'
 import { requireApiKey, MissingApiKeyError } from '@/lib/ai/api-keys'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import type { Account } from '@/types/database'
 
 // アカウントなし時のデフォルト設定
@@ -32,6 +33,14 @@ export async function POST(req: NextRequest) {
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+
+    const rl = await checkRateLimit(user.id, 'generate', RATE_LIMITS.generate.limit, RATE_LIMITS.generate.windowSeconds)
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: '生成リクエストが多すぎます。しばらくしてからお試しください。', code: 'RATE_LIMITED' },
+        { status: 429 },
+      )
+    }
 
     const body = await req.json() as {
       accountId?: string

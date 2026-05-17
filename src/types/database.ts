@@ -72,3 +72,18 @@ export interface ReferenceAccount {
   notes: string | null
   created_at: string
 }
+
+export interface UserApiKeys {
+  user_id: string
+  openrouter_key: string | null
+  openai_key: string | null
+  updated_at: string
+}
+
+export interface AccountPromptSettings {
+  account_id: string
+  text_extra: string | null
+  image_extra: string | null
+  themes_extra: string | null
+  updated_at: string
+}

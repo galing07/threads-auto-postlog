@@ -62,7 +62,7 @@ export async function generateDiagramImage({
   style = 'diagram',
   apiKey,
 }: GenerateImageOptions): Promise<string> {
-  const client = new OpenAI({ apiKey })
+  const client = new OpenAI({ apiKey, timeout: 120_000, maxRetries: 0 })
 
   const styleGuide: Record<string, string> = {
     diagram:     'Clean diagram infographic, flat design, white background, Japanese career advice, minimal icons, pastel colors, professional layout',

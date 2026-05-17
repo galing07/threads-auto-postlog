@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { cx } from '@/lib/utils'
+import { useToast } from '@/components/ui/Toast'
 import type { Account, Post } from '@/types/database'
 
 type Step = 'input' | 'preview' | 'done'
@@ -49,6 +50,7 @@ function CharCounter({ text, limit = X_LIMIT }: { text: string; limit?: number }
 }
 
 export default function XGeneratePage() {
+  const toast = useToast()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [selectedAccount, setSelectedAccount] = useState('')
   const [theme, setTheme] = useState('')
@@ -77,7 +79,7 @@ export default function XGeneratePage() {
       })
       .catch(e => {
         console.error('[generate/x] initial load failed', e)
-        alert('アカウント情報の取得に失敗しました。再読み込みしてください。')
+        toast.error('アカウント情報の取得に失敗しました。再読み込みしてください。')
       })
   }, [])
 
@@ -96,7 +98,7 @@ export default function XGeneratePage() {
       if (data.error) throw new Error(data.error)
       setThemeSuggestions(data.themes ?? [])
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'テーマ生成に失敗しました')
+      toast.error(e instanceof Error ? e.message : 'テーマ生成に失敗しました')
     } finally {
       setSuggestLoading(false)
     }
@@ -132,7 +134,7 @@ export default function XGeneratePage() {
       setGeneratedSummary(data.summary ?? '')
       setStep('preview')
     } catch (e) {
-      alert(e instanceof Error ? e.message : '生成に失敗しました')
+      toast.error(e instanceof Error ? e.message : '生成に失敗しました')
     } finally {
       setLoading(false)
     }
@@ -181,7 +183,7 @@ export default function XGeneratePage() {
       }
       setStep('done')
     } catch (e) {
-      alert(e instanceof Error ? e.message : '保存に失敗しました')
+      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
       setLoading(false)
     }

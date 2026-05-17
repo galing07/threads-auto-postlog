@@ -24,6 +24,9 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=xxxx
 SUPABASE_SERVICE_ROLE_KEY=xxxx
 NEXT_PUBLIC_APP_URL=https://your-domain.example
+# ユーザーの API キーを AES-256-GCM で暗号化保存するための鍵（必須）
+# 生成: openssl rand -hex 32
+ENCRYPTION_KEY=（64桁のhex文字列）
 ```
 
 > **API キーは個別ユーザーが UI で登録** します。

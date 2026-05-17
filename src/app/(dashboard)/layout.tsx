@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -12,9 +13,11 @@ import {
   FileText,
   Sparkles,
   Settings,
+  MoreHorizontal,
 } from 'lucide-react'
 import { cx } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
+import { ToastProvider } from '@/components/ui/Toast'
 
 const navItems = [
   { href: '/dashboard', label: 'ホーム', icon: LayoutDashboard },
@@ -25,6 +28,11 @@ const navItems = [
   { href: '/dashboard/logs', label: 'ログ', icon: ScrollText },
   { href: '/dashboard/settings', label: '設定', icon: Settings },
 ]
+
+// モバイル底部ナビは過密回避のため主要4項目のみ。残りは「メニュー」シートに格納
+const MOBILE_PRIMARY = ['/dashboard', '/dashboard/generate', '/dashboard/drafts', '/dashboard/logs']
+const mobilePrimaryItems = navItems.filter(i => MOBILE_PRIMARY.includes(i.href))
+const mobileMenuItems = navItems.filter(i => !MOBILE_PRIMARY.includes(i.href))
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -37,10 +45,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.refresh()
   }
 
+  const [menuOpen, setMenuOpen] = useState(false)
+
   const isActive = (href: string) =>
     pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
 
+  const menuActive = mobileMenuItems.some(i => isActive(i.href))
+
   return (
+    <ToastProvider>
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC]">
       {/* Sidebar — desktop only */}
       <nav className="hidden md:flex w-60 shrink-0 flex-col bg-slate-800">
@@ -114,9 +127,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {children}
       </main>
 
-      {/* Bottom nav — mobile only */}
+      {/* Menu sheet — mobile only */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-[60] md:hidden" onClick={() => setMenuOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="absolute bottom-16 left-0 right-0 rounded-t-2xl bg-white p-2 pb-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-200" />
+            {mobileMenuItems.map(({ href, label, icon: Icon }) => {
+              const active = isActive(href)
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMenuOpen(false)}
+                  className={cx(
+                    'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors',
+                    active ? 'bg-[#E9F7F9] text-[#006F83]' : 'text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  <Icon className={cx('h-4 w-4', active ? 'text-[#00A3BF]' : 'text-slate-400')} />
+                  {label}
+                </Link>
+              )
+            })}
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-slate-500 hover:bg-slate-50"
+            >
+              <LogOut className="h-4 w-4 text-slate-400" />
+              ログアウト
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom nav — mobile only (主要4 + メニュー) */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-[#e5edf5] bg-white md:hidden">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {mobilePrimaryItems.map(({ href, label, icon: Icon }) => {
           const active = isActive(href)
           return (
             <Link
@@ -132,7 +182,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </Link>
           )
         })}
+        <button
+          onClick={() => setMenuOpen(v => !v)}
+          aria-label="その他のメニュー"
+          className={cx(
+            'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+            menuActive || menuOpen ? 'text-[#00A3BF]' : 'text-slate-400',
+          )}
+        >
+          <MoreHorizontal className={cx('h-5 w-5', menuActive || menuOpen ? 'text-[#00A3BF]' : 'text-slate-400')} />
+          メニュー
+        </button>
       </nav>
     </div>
+    </ToastProvider>
   )
 }

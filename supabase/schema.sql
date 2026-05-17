@@ -210,3 +210,46 @@ CREATE TRIGGER accounts_updated_at
 CREATE TRIGGER posts_updated_at
   BEFORE UPDATE ON posts
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================
+-- レート制限（固定ウィンドウ）
+-- ============================================
+
+CREATE TABLE rate_limits (
+  user_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  bucket TEXT NOT NULL,
+  window_start TIMESTAMPTZ NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, bucket, window_start)
+);
+
+ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
+-- ポリシー無し = service_role 以外アクセス不可
+
+CREATE INDEX idx_rate_limits_window ON rate_limits (window_start);
+
+CREATE OR REPLACE FUNCTION increment_rate_limit(
+  p_user_id UUID,
+  p_bucket TEXT,
+  p_window_seconds INTEGER
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_window_start TIMESTAMPTZ;
+  v_count INTEGER;
+BEGIN
+  v_window_start := to_timestamp(
+    floor(extract(epoch FROM now()) / p_window_seconds) * p_window_seconds
+  );
+  INSERT INTO rate_limits (user_id, bucket, window_start, count)
+  VALUES (p_user_id, p_bucket, v_window_start, 1)
+  ON CONFLICT (user_id, bucket, window_start)
+  DO UPDATE SET count = rate_limits.count + 1
+  RETURNING count INTO v_count;
+  RETURN v_count;
+END;
+$$;
