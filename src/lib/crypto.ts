@@ -22,15 +22,25 @@ function parseKey(raw: string): Buffer {
   }
   const buf = Buffer.from(raw, 'base64')
   if (buf.length !== 32 || buf.toString('base64').replace(/=+$/, '') !== raw.replace(/=+$/, '')) {
-    throw new Error('ENCRYPTION_KEY must be 64-hex or base64 of exactly 32 bytes')
+    // 値そのものは絶対に出さない。長さと文字種だけ診断用に出す
+    const looksHexish = /^[0-9a-fA-F]+$/.test(raw)
+    throw new Error(
+      `ENCRYPTION_KEY invalid: length=${raw.length} (expected 64 hex), ` +
+      `allHexChars=${looksHexish}, base64Bytes=${buf.length}`,
+    )
   }
   return buf
 }
 
-// 環境変数は貼り付け時に前後の空白・改行・引用符が混入しがちなので除去する
+// 環境変数は貼り付け時に空白・改行・引用符が混入しがちなので徹底除去する
+// （hex も base64 も内部に空白を含まないため、全空白除去は安全）
 function cleanEnv(v: string | undefined): string {
   if (!v) return ''
-  return v.trim().replace(/^["']|["']$/g, '').trim()
+  return v
+    .trim()
+    .replace(/^["']|["']$/g, '') // 両端のクォート
+    .replace(/\s+/g, '')          // 中間の空白・改行も全除去
+    .trim()
 }
 
 function getKey(): Buffer {
