@@ -73,16 +73,19 @@ const SETUP_GUIDES: Record<SupportedPlatform, SetupGuide> = {
     ],
   },
   x: {
-    intro: '',
+    intro: 'X は Developer Portal のボタンで取れる4キーを貼るだけ（ブラウザ認可フロー不要）。X は Meta とは無関係なので developer.x.com で設定します。',
     links: [
       { label: 'X Developer Portal を開く', href: 'https://developer.x.com/en/portal/dashboard' },
     ],
     steps: [
-      'Developer Portal で Project と App を作成',
-      'App の「User authentication settings」で OAuth 2.0 を有効化（Type: Web App、scope: tweet.read tweet.write users.read offline.access）',
-      '「Keys and tokens」タブ → OAuth 2.0 でユーザーの access token を発行',
-      '発行された access token をコピー',
-      '↓ の「Access Token」に貼り付け',
+      '【初回のみ】Developer Portal で Project と App を作成',
+      '⚠️必須: App の「User authentication settings」→「Set up」→ App permissions を「Read and write」にして保存（Read only だと投稿できません）',
+      '「Keys and tokens」タブを開く',
+      'Consumer Keys（API Key / API Key Secret）を控える（API Key Secret は1回しか表示されないので必ずコピー）',
+      'Authentication Tokens の「Access Token and Secret」で「Generate」を押し、Access Token / Access Token Secret を控える（こちらも1回限り表示）',
+      '↓ の各欄に貼り付け: API Key（1つ目）/ API Key Secret（2つ目）/ Access Token（3つ目=上の「Access Token」欄）/ Access Token Secret（4つ目）',
+      '保存。「X User ID」は空欄でOK（自動取得します）。2個目以降のアカウントも同様に4キーを貼るだけ（App作成は不要）',
+      '※ permissions を後から Read and write に変えた場合は、必ず Access Token を再Generate し直すこと（古いトークンは Read only のまま）',
     ],
   },
 }
@@ -279,6 +282,9 @@ export default function AccountsPage() {
     threadsUserId: '',
     instagramUserId: '',
     xUserId: '',
+    xApiKey: '',
+    xApiSecret: '',
+    xAccessSecret: '',
     clientId: '',
     clientSecret: '',
   })
@@ -333,6 +339,9 @@ export default function AccountsPage() {
           threadsUserId: form.threadsUserId,
           instagramUserId: form.instagramUserId,
           xUserId: form.xUserId,
+          xApiKey: form.xApiKey,
+          xApiSecret: form.xApiSecret,
+          xAccessSecret: form.xAccessSecret,
           clientId: form.clientId,
           clientSecret: form.clientSecret,
         }),
@@ -547,7 +556,7 @@ export default function AccountsPage() {
                         placeholder={
                           platform === 'threads' ? 'THXX...'
                           : platform === 'instagram' ? 'EAA...'
-                          : 'OAuth 2.0 access token'
+                          : 'Access Token（Keys and tokens の3つ目）'
                         }
                         className="pr-10"
                       />
@@ -564,7 +573,7 @@ export default function AccountsPage() {
                         ? 'Meta for Developers の Graph API Explorer または長期トークン'
                         : platform === 'instagram'
                           ? 'Facebook Page アクセストークン（Instagram Business Account 接続済み）'
-                          : 'X Developer Portal で発行した OAuth 2.0 ユーザートークン (tweet.write 必須)'}
+                          : 'X Developer Portal「Keys and tokens」の Access Token（App permissions は Read and write 必須）'}
                     </p>
                   </div>
 
@@ -589,14 +598,54 @@ export default function AccountsPage() {
                     </div>
                   )}
                   {platform === 'x' && (
-                    <div>
-                      <FieldLabel optional>X User ID</FieldLabel>
-                      <Input
-                        value={form.xUserId}
-                        onChange={e => setForm(f => ({ ...f, xUserId: e.target.value }))}
-                        placeholder="空欄なら /users/me から自動取得"
-                      />
-                    </div>
+                    <>
+                      <div>
+                        <FieldLabel>API Key</FieldLabel>
+                        <Input
+                          value={form.xApiKey}
+                          onChange={e => setForm(f => ({ ...f, xApiKey: e.target.value }))}
+                          placeholder="Keys and tokens の API Key（1つ目）"
+                          aria-label="X API Key"
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>API Key Secret</FieldLabel>
+                        <Input
+                          type={showSecret ? 'text' : 'password'}
+                          value={form.xApiSecret}
+                          onChange={e => setForm(f => ({ ...f, xApiSecret: e.target.value }))}
+                          placeholder="API Key Secret（2つ目）"
+                          aria-label="X API Key Secret"
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Access Token Secret</FieldLabel>
+                        <Input
+                          type={showSecret ? 'text' : 'password'}
+                          value={form.xAccessSecret}
+                          onChange={e => setForm(f => ({ ...f, xAccessSecret: e.target.value }))}
+                          placeholder="Access Token Secret（4つ目）"
+                          aria-label="X Access Token Secret"
+                        />
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={showSecret}
+                          onChange={e => setShowSecret(e.target.checked)}
+                        />
+                        Secret を表示
+                      </label>
+                      <div>
+                        <FieldLabel optional>X User ID</FieldLabel>
+                        <Input
+                          value={form.xUserId}
+                          onChange={e => setForm(f => ({ ...f, xUserId: e.target.value }))}
+                          placeholder="空欄なら /users/me から自動取得"
+                          aria-label="X User ID"
+                        />
+                      </div>
+                    </>
                   )}
 
                   {platform === 'threads' && (

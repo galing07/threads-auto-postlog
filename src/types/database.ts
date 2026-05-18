@@ -18,6 +18,10 @@ export interface Account {
   threads_client_secret: string | null
   instagram_user_id: string | null
   x_user_id: string | null
+  // X OAuth 1.0a User Context（Developer Portal の4キー）
+  x_api_key: string | null
+  x_api_secret: string | null
+  x_access_secret: string | null
   is_active: boolean
   created_at: string
   updated_at: string

@@ -7,7 +7,7 @@ import type { Account, Platform, Post } from '@/types/database'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { createThreadsPost, refreshThreadsToken, ThreadsAuthError } from './threads'
 import { createInstagramPost, InstagramAuthError } from './instagram'
-import { createXTweet, createXThread, XAuthError } from './x'
+import { createXTweet, createXThread, XAuthError, type XCredentials } from './x'
 
 export interface PublishContext {
   post: Pick<Post, 'id' | 'text_content' | 'image_url'>
@@ -64,24 +64,34 @@ const instagramPublisher: Publisher = {
 
 // ---------- X ----------
 // 本文中に "\n---\n" 区切りが含まれていればスレッド投稿として送信。
+function xCredentials(account: Account): XCredentials {
+  return {
+    apiKey: account.x_api_key!,
+    apiSecret: account.x_api_secret!,
+    accessToken: account.access_token!,
+    accessSecret: account.x_access_secret!,
+  }
+}
+
 const xPublisher: Publisher = {
   platform: 'x',
   validate({ account }) {
-    if (!account.access_token) {
-      throw new Error('X APIトークンが設定されていません')
+    if (!account.x_api_key || !account.x_api_secret || !account.access_token || !account.x_access_secret) {
+      throw new Error('X の4キー（API Key/Secret・Access Token/Secret）が設定されていません')
     }
   },
   async publish({ post, account }) {
+    const cred = xCredentials(account)
     const text = post.text_content ?? ''
     const parts = text.split(/\n---\n/).map(s => s.trim()).filter(Boolean)
     if (parts.length > 1) {
-      const results = await createXThread(account.access_token!, parts)
+      const results = await createXThread(cred, parts)
       return {
         platformPostId: results[0].id,
         platformPostIds: results.map(r => r.id),
       }
     }
-    const result = await createXTweet(account.access_token!, text)
+    const result = await createXTweet(cred, text)
     return { platformPostId: result.id }
   },
 }

@@ -84,6 +84,9 @@ interface CreateAccountBody {
   threadsUserId?: unknown
   instagramUserId?: unknown
   xUserId?: unknown
+  xApiKey?: unknown
+  xApiSecret?: unknown
+  xAccessSecret?: unknown
   clientId?: unknown
   clientSecret?: unknown
 }
@@ -156,6 +159,9 @@ export async function POST(req: NextRequest) {
     let threadsUserId: string | null = null
     let instagramUserId: string | null = null
     let xUserId: string | null = null
+    let xApiKey: string | null = null
+    let xApiSecret: string | null = null
+    let xAccessSecret: string | null = null
 
     if (platform === 'threads') {
       threadsUserId = sanitizeStr(body.threadsUserId, MAX_USER_ID)
@@ -184,15 +190,30 @@ export async function POST(req: NextRequest) {
         )
       }
     } else if (platform === 'x') {
+      // X は OAuth 1.0a 4キー方式。accessTokenRaw = X Access Token
+      xApiKey = sanitizeStr(body.xApiKey, MAX_TOKEN) || null
+      xApiSecret = sanitizeStr(body.xApiSecret, MAX_TOKEN) || null
+      xAccessSecret = sanitizeStr(body.xAccessSecret, MAX_TOKEN) || null
+      if (!xApiKey || !xApiSecret || !xAccessSecret) {
+        return NextResponse.json(
+          { error: 'X は API Key / API Key Secret / Access Token / Access Token Secret の4つすべてが必要です' },
+          { status: 400 },
+        )
+      }
       xUserId = sanitizeStr(body.xUserId, MAX_USER_ID)
       if (!xUserId) {
         try {
-          const me = await getXMe(accessTokenRaw)
+          const me = await getXMe({
+            apiKey: xApiKey,
+            apiSecret: xApiSecret,
+            accessToken: accessTokenRaw,
+            accessSecret: xAccessSecret,
+          })
           xUserId = me.id
         } catch (e) {
           console.error('[accounts POST x/users/me]', e instanceof Error ? e.message : 'unknown')
           return NextResponse.json(
-            { error: 'X のアクセストークンが無効です。トークンを確認してください' },
+            { error: 'X の4キーが無効です。Developer Portal の値と、App permissions が「Read and write」かを確認してください' },
             { status: 400 },
           )
         }
@@ -215,6 +236,9 @@ export async function POST(req: NextRequest) {
         threads_client_secret: clientSecret,
         instagram_user_id: instagramUserId,
         x_user_id: xUserId,
+        x_api_key: xApiKey,
+        x_api_secret: xApiSecret,
+        x_access_secret: xAccessSecret,
         is_active: true,
       })
       .select(PUBLIC_ACCOUNT_COLUMNS)

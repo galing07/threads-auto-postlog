@@ -21,8 +21,11 @@ CREATE TABLE accounts (
   threads_client_secret TEXT,
   -- Instagram
   instagram_user_id TEXT,
-  -- X
+  -- X (OAuth 1.0a User Context: Developer Portal の4キー)
   x_user_id TEXT,
+  x_api_key TEXT,
+  x_api_secret TEXT,
+  x_access_secret TEXT,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
