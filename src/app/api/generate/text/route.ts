@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateSNSText } from '@/lib/ai/text'
-import { fetchAccountPromptExtra } from '@/lib/ai/prompt-settings'
+import { fetchAccountPromptTemplate } from '@/lib/ai/prompt-settings'
 import { requireApiKey, MissingApiKeyError } from '@/lib/ai/api-keys'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import type { Account } from '@/types/database'
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = await requireApiKey('openrouter')
-    const userExtra = await fetchAccountPromptExtra(accountId, 'text')
+    const promptTemplate = await fetchAccountPromptTemplate(accountId, 'text')
 
     const result = await generateSNSText({
       account,
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       recentSummaries,
       referencePost,
       referenceAccountName,
-      userExtra,
+      promptTemplate,
       apiKey,
     })
     return NextResponse.json(result)

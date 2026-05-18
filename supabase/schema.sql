@@ -83,6 +83,11 @@ CREATE TABLE user_api_keys (
 -- 既存のシステムプロンプトに「追加指示」として混ぜる
 CREATE TABLE account_prompt_settings (
   account_id UUID PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  -- 全文編集方式: NULL ならデフォルトテンプレ、値ありならその全文を使用
+  text_prompt TEXT,
+  image_prompt TEXT,
+  themes_prompt TEXT,
+  -- 旧・追加指示方式（後方互換のため残置・新方式では未使用）
   text_extra TEXT,
   image_extra TEXT,
   themes_extra TEXT,

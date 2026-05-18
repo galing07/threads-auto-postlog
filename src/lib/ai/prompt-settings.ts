@@ -42,6 +42,40 @@ export async function fetchAccountPromptExtra(
 }
 
 /**
+ * 指定アカウントの保存済みプロンプト全文テンプレートを取得する。
+ * 未保存 / accountId 無し / 未認証 なら null（呼び出し側でデフォルトを使う）。
+ */
+export async function fetchAccountPromptTemplate(
+  accountId: string | null | undefined,
+  kind: PromptKind,
+): Promise<string | null> {
+  if (!accountId) return null
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+
+    const { data } = await supabase
+      .from('account_prompt_settings')
+      .select('text_prompt, image_prompt, themes_prompt')
+      .eq('account_id', accountId)
+      .maybeSingle()
+
+    if (!data) return null
+    const column = kind === 'text' ? data.text_prompt
+      : kind === 'image' ? data.image_prompt
+      : data.themes_prompt
+
+    if (typeof column !== 'string') return null
+    const trimmed = column.trim()
+    return trimmed ? trimmed : null
+  } catch (e) {
+    console.error('[prompt-settings template]', e instanceof Error ? e.message : 'unknown')
+    return null
+  }
+}
+
+/**
  * システムプロンプトに「ユーザー追加指示」を安全な形で連結する。
  * - 閉じタグ等のデリミタ脱出文字列を除去
  * - 毎回ランダム nonce 付きデリミタで囲み、内容からのブロック脱出を困難にする

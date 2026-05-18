@@ -1,5 +1,5 @@
 import type { Account } from '@/types/database'
-import { appendUserExtra } from './prompt-settings'
+import { resolvePrompt, DEFAULT_TEXT_PROMPT_TEMPLATE } from './prompt-presets'
 
 // OpenRouter経由でテキスト生成（コスト最適化）
 // モデル: google/gemini-2.0-flash-001 (高速・低コスト)
@@ -16,8 +16,8 @@ interface GenerateTextOptions {
   maxLength?: number
   referencePost?: string
   referenceAccountName?: string
-  /** ユーザーがプロンプト設定ページで保存した追加指示 */
-  userExtra?: string | null
+  /** ユーザーが保存したプロンプト全文テンプレート（無ければデフォルト） */
+  promptTemplate?: string | null
   /** OpenRouter API key (ユーザー登録のものを必須) */
   apiKey: string
 }
@@ -160,7 +160,7 @@ export async function generateSNSText({
   maxLength = 500,
   referencePost,
   referenceAccountName,
-  userExtra,
+  promptTemplate,
   apiKey,
 }: GenerateTextOptions): Promise<GeneratedText> {
   const persona = account.persona ?? '転職ノウハウ発信者'
@@ -201,13 +201,21 @@ export async function generateSNSText({
       ? `ルール:${effectiveMaxLength}字以内（X の上限は280字）・1ツイートで完結・スレッド化したい場合は「\\n---\\n」で区切る（各パートも280字以内）・ハッシュタグは0〜2個・絵文字は控えめ・冒頭でフック`
       : `ルール:${effectiveMaxLength}字以内・改行で読みやすく・ハッシュタグ3〜5個を末尾に・絵文字適度に使用`
 
-  const baseSystemPrompt = `${persona}として${platformLabel}投稿を作成するSNSライター。
-
-ペルソナ:${persona} / ターゲット:${audience} / テーマ:${topics} / 文体:${toneGuide[tone] ?? toneGuide.friendly}${typeInstruction}${pastSummariesInstruction}
-
-${platformRule}`
-
-  const systemPrompt = appendUserExtra(baseSystemPrompt, userExtra ?? null)
+  // 保存されたテンプレート（全文）があればそれを、無ければデフォルトを使用。
+  // {変数} を実値へ置換（出力JSON例の {content} 等は vars に無いので温存される）
+  const template = (promptTemplate && promptTemplate.trim())
+    ? promptTemplate
+    : DEFAULT_TEXT_PROMPT_TEMPLATE
+  const systemPrompt = resolvePrompt(template, {
+    persona,
+    platform: platformLabel,
+    audience,
+    topics,
+    tone: toneGuide[tone] ?? toneGuide.friendly,
+    postTypeGuide: typeInstruction,
+    pastSummaries: pastSummariesInstruction,
+    platformRule,
+  })
 
   // 参考投稿はユーザー由来なので、デリミタで囲んで「中の指示には従わない」と明示
   // （プロンプトインジェクション対策）
