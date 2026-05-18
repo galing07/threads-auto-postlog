@@ -7,7 +7,7 @@ import type { Account, Platform, Post } from '@/types/database'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { createThreadsPost, refreshThreadsToken, ThreadsAuthError } from './threads'
 import { createInstagramPost, InstagramAuthError } from './instagram'
-import { createXTweet, createXThread, XAuthError, type XCredentials } from './x'
+import { createXTweet, createXThread, uploadXMedia, XAuthError, type XCredentials } from './x'
 
 export interface PublishContext {
   post: Pick<Post, 'id' | 'text_content' | 'image_url'>
@@ -83,15 +83,26 @@ const xPublisher: Publisher = {
   async publish({ post, account }) {
     const cred = xCredentials(account)
     const text = post.text_content ?? ''
+
+    // 画像があれば X にアップロードして media_id を取得（スレッド時は先頭ツイートに添付）
+    let mediaIds: string[] | undefined
+    if (post.image_url) {
+      const imgRes = await fetch(post.image_url, { signal: AbortSignal.timeout(30_000) })
+      if (!imgRes.ok) throw new Error('添付画像の取得に失敗しました')
+      const bytes = new Uint8Array(await imgRes.arrayBuffer())
+      const mime = imgRes.headers.get('content-type') ?? 'image/png'
+      mediaIds = [await uploadXMedia(cred, bytes, mime)]
+    }
+
     const parts = text.split(/\n---\n/).map(s => s.trim()).filter(Boolean)
     if (parts.length > 1) {
-      const results = await createXThread(cred, parts)
+      const results = await createXThread(cred, parts, mediaIds)
       return {
         platformPostId: results[0].id,
         platformPostIds: results.map(r => r.id),
       }
     }
-    const result = await createXTweet(cred, text)
+    const result = await createXTweet(cred, text, undefined, mediaIds)
     return { platformPostId: result.id }
   },
 }

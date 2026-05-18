@@ -6,7 +6,9 @@
 import crypto from 'crypto'
 
 const X_API_BASE = 'https://api.twitter.com/2'
+const X_MEDIA_UPLOAD_URL = 'https://upload.twitter.com/1.1/media/upload.json'
 const REQUEST_TIMEOUT_MS = 30_000
+const MEDIA_UPLOAD_TIMEOUT_MS = 60_000
 
 export interface XCredentials {
   apiKey: string        // Consumer / API Key
@@ -111,13 +113,44 @@ async function xGet<T>(path: string, cred: XCredentials): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/**
+ * 画像を X にアップロードして media_id を得る（v1.1 media/upload, simple upload）。
+ * multipart/form-data なので OAuth 署名ベースには oauth_* のみ含める
+ * （buildOAuthHeader と同じ挙動でそのまま使える）。
+ */
+export async function uploadXMedia(
+  cred: XCredentials,
+  bytes: Uint8Array,
+  mimeType: string,
+): Promise<string> {
+  const form = new FormData()
+  form.append('media', new Blob([bytes as BlobPart], { type: mimeType }))
+  const res = await fetch(X_MEDIA_UPLOAD_URL, {
+    method: 'POST',
+    headers: { Authorization: buildOAuthHeader('POST', X_MEDIA_UPLOAD_URL, cred) },
+    body: form,
+    signal: AbortSignal.timeout(MEDIA_UPLOAD_TIMEOUT_MS),
+  })
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    console.error('[X API]', 'POST', '/media/upload', res.status, errText)
+    if (res.status === 401 || res.status === 403) throw new XAuthError()
+    throw new Error(`X media upload error (HTTP ${res.status})`)
+  }
+  const json = await res.json() as { media_id_string?: string }
+  if (!json.media_id_string) throw new Error('X メディアアップロードに失敗しました（media_id 取得不可）')
+  return json.media_id_string
+}
+
 export async function createXTweet(
   cred: XCredentials,
   text: string,
   replyToId?: string,
+  mediaIds?: string[],
 ): Promise<XTweetResult> {
   const body: Record<string, unknown> = { text }
   if (replyToId) body.reply = { in_reply_to_tweet_id: replyToId }
+  if (mediaIds && mediaIds.length > 0) body.media = { media_ids: mediaIds }
   const result = await xPost<{ data: XTweetResult }>('/tweets', cred, body)
   return result.data
 }
@@ -125,11 +158,13 @@ export async function createXTweet(
 export async function createXThread(
   cred: XCredentials,
   parts: string[],
+  mediaIds?: string[],
 ): Promise<XTweetResult[]> {
   const results: XTweetResult[] = []
-  for (const text of parts) {
+  for (let i = 0; i < parts.length; i++) {
     const replyToId = results.at(-1)?.id
-    results.push(await createXTweet(cred, text, replyToId))
+    // 画像はスレッド先頭ツイートにのみ添付
+    results.push(await createXTweet(cred, parts[i], replyToId, i === 0 ? mediaIds : undefined))
   }
   return results
 }

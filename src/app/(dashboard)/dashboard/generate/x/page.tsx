@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Sparkles, Send, Save, RefreshCw, ChevronLeft,
   CheckCircle, Lightbulb, Scissors, Plus, X as XIcon, FileText,
+  ImageIcon, Wand2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
@@ -160,6 +161,11 @@ export default function XGeneratePage() {
   const [savedPost, setSavedPost] = useState<Post | null>(null)
   const [draftId, setDraftId] = useState<string | null>(null)
 
+  const [imageUrl, setImageUrl] = useState('')
+  const [imageLoading, setImageLoading] = useState(false)
+  const [imageEditPrompt, setImageEditPrompt] = useState('')
+  const [imageEditing, setImageEditing] = useState(false)
+
   const [promptText, setPromptText] = useState('')
   const [promptDefault, setPromptDefault] = useState('')
   const [promptStatus, setPromptStatus] = useState<PromptPanelStatus>('idle')
@@ -298,6 +304,50 @@ export default function XGeneratePage() {
     setPostMode('thread')
   }
 
+  async function handleGenerateImage() {
+    const base = postMode === 'thread' ? threadParts.join('\n') : generatedText
+    if (!base.trim()) return
+    setImageLoading(true)
+    try {
+      const res = await fetch('/api/generate/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: selectedAccount || undefined,
+          postContent: base,
+          style: 'diagram',
+        }),
+      })
+      const data = await res.json() as { imageUrl: string; error?: string }
+      if (data.error) throw new Error(data.error)
+      setImageUrl(data.imageUrl)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '画像生成に失敗しました')
+    } finally {
+      setImageLoading(false)
+    }
+  }
+
+  async function handleEditImage() {
+    if (!imageUrl || !imageEditPrompt.trim()) return
+    setImageEditing(true)
+    try {
+      const res = await fetch('/api/generate/image/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl, editPrompt: imageEditPrompt }),
+      })
+      const data = await res.json() as { imageUrl: string; error?: string }
+      if (data.error) throw new Error(data.error)
+      setImageUrl(data.imageUrl)
+      setImageEditPrompt('')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '画像編集に失敗しました')
+    } finally {
+      setImageEditing(false)
+    }
+  }
+
   async function handleSave(publish = false) {
     setLoading(true)
     try {
@@ -313,6 +363,7 @@ export default function XGeneratePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             textContent,
+            imageUrl: imageUrl || null,
             summary: generatedSummary || null,
           }),
         })
@@ -324,6 +375,7 @@ export default function XGeneratePage() {
           body: JSON.stringify({
             accountId: selectedAccount || undefined,
             textContent,
+            imageUrl: imageUrl || undefined,
             theme,
             summary: generatedSummary || undefined,
           }),
@@ -357,6 +409,8 @@ export default function XGeneratePage() {
     setGeneratedText('')
     setThreadParts([''])
     setGeneratedSummary('')
+    setImageUrl('')
+    setImageEditPrompt('')
     setSavedPost(null)
     setDraftId(null)
     setThemeSuggestions([])
@@ -406,7 +460,7 @@ export default function XGeneratePage() {
               X 投稿生成
             </h1>
           </div>
-          <p className="mt-0.5 text-sm text-gray-500 ml-9">単発ツイート or スレッドを生成してXに投稿</p>
+          <p className="mt-0.5 text-sm text-gray-500 ml-9">テキスト + 図解画像を生成してXに投稿</p>
         </div>
         {step === 'preview' && (
           <button onClick={() => setStep('input')} className="mt-6 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors">
@@ -665,6 +719,46 @@ export default function XGeneratePage() {
               </button>
             </div>
           )}
+
+          {/* 図解画像 */}
+          <Card className="space-y-3">
+            <div className="flex items-center justify-between">
+              <SectionLabel>図解画像</SectionLabel>
+              <button onClick={handleGenerateImage} disabled={imageLoading} className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50">
+                <ImageIcon className="h-3 w-3" />
+                {imageLoading ? '生成中...' : imageUrl ? '再生成' : '図解を生成'}
+              </button>
+            </div>
+            {imageUrl ? (
+              <>
+                <img src={imageUrl} alt="生成された図解" className="w-full rounded-md" />
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={imageEditPrompt}
+                    onChange={e => setImageEditPrompt(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && handleEditImage()}
+                    placeholder="修正指示（例：背景を青に、テキストを日本語に）"
+                    disabled={imageEditing}
+                    className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden placeholder-gray-400 transition focus:border-gray-700 focus:ring-2 focus:ring-gray-700/10 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={handleEditImage}
+                    disabled={!imageEditPrompt.trim() || imageEditing}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md bg-black px-3 py-2 text-xs font-medium text-white transition hover:bg-gray-800 disabled:opacity-40 sm:w-auto sm:shrink-0"
+                  >
+                    <Wand2 className={cx('h-3.5 w-3.5', imageEditing && 'animate-pulse')} />
+                    {imageEditing ? '修正中...' : '修正'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-400">スレッドの場合は1件目のツイートに添付されます</p>
+              </>
+            ) : (
+              <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">
+                <ImageIcon className="h-5 w-5 text-gray-300" />
+                <span className="text-xs text-gray-400">「図解を生成」ボタンで追加（任意）</span>
+              </div>
+            )}
+          </Card>
 
           {/* アクション */}
           <div className="flex gap-3">
