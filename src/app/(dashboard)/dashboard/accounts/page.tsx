@@ -80,6 +80,7 @@ const SETUP_GUIDES: Record<SupportedPlatform, SetupGuide> = {
     steps: [
       '【初回のみ】Developer Portal で Project と App を作成',
       '⚠️必須: App の「Settings」→アプリの権限を「Read and write」にして保存（Read only だと投稿できません）',
+      '同じ設定画面の「コールバックURI / リダイレクトURL」と「ウェブサイトURL」も必須（埋めないと保存できません）。本アプリはブラウザ認可フローを使わないので値は何でもOK。両方に https://threads-auto-post-git-master-riku0804s-projects.vercel.app を入れて保存',
       '「Keys and tokens」タブを開く',
       'Consumer Keys（API Key / API Key Secret）を控える（API Key Secret は1回しか表示されないので必ずコピー）',
       'Authentication Tokens の「Access Token and Secret」で「Generate」を押し、Access Token / Access Token Secret を控える（こちらも1回限り表示）',
