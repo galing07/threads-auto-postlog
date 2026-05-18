@@ -13,6 +13,11 @@
   --color-primary-800: #005A6B;
   --color-primary-900: #003741;
 
+  /* Neutral / surface tokens（今後のコードはマジック値でなくこれを使う） */
+  --color-surface:     #F8FAFC; /* ページ背景 */
+  --color-border-soft: #e5edf5; /* カード/区切り境界 */
+  --color-ink:         #061b31; /* 見出しの濃色 */
+
   --animate-hide: hide 150ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-slide-down-and-fade: slideDownAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-slide-up-and-fade: slideUpAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
