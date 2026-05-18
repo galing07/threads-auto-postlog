@@ -140,6 +140,7 @@ export default function ThreadsGeneratePage() {
   const [imageEditPrompt, setImageEditPrompt] = useState('')
   const [imageEditing, setImageEditing] = useState(false)
   const [savedPost, setSavedPost] = useState<Post | null>(null)
+  const [draftId, setDraftId] = useState<string | null>(null)
 
   const [referenceAccounts, setReferenceAccounts] = useState<ReferenceAccount[]>([])
   const [showReference, setShowReference] = useState(false)
@@ -248,12 +249,14 @@ export default function ThreadsGeneratePage() {
           postType: postType || undefined,
           referencePost: referencePost.trim() || undefined,
           referenceAccountName: selectedRefName || undefined,
+          draftId: draftId ?? undefined,
         }),
       })
-      const data = await res.json() as { content: string; summary: string; error?: string }
+      const data = await res.json() as { content: string; summary: string; draftId?: string | null; error?: string }
       if (data.error) throw new Error(data.error)
       setGeneratedText(data.content)
       setGeneratedSummary(data.summary ?? '')
+      if (data.draftId) setDraftId(data.draftId)
       setStep('preview')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '生成に失敗しました')
@@ -324,19 +327,35 @@ export default function ThreadsGeneratePage() {
   async function handleSave(publish = false) {
     setLoading(true)
     try {
-      const res = await fetch('/api/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId: selectedAccount || undefined,
-          textContent: generatedText,
-          imageUrl: imageUrl || undefined,
-          theme,
-          summary: generatedSummary || undefined,
-        }),
-      })
-      const post = await res.json() as Post & { error?: string }
-      if (post.error) throw new Error(post.error)
+      // 生成時に下書きは自動保存済み。draftId があれば本文/画像の最新を反映するだけ（二重作成しない）
+      let post: Post
+      if (draftId) {
+        const res = await fetch(`/api/posts/${draftId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            textContent: generatedText,
+            imageUrl: imageUrl || null,
+            summary: generatedSummary || null,
+          }),
+        })
+        post = await res.json() as Post & { error?: string }
+        if ((post as { error?: string }).error) throw new Error((post as { error?: string }).error)
+      } else {
+        const res = await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountId: selectedAccount || undefined,
+            textContent: generatedText,
+            imageUrl: imageUrl || undefined,
+            theme,
+            summary: generatedSummary || undefined,
+          }),
+        })
+        post = await res.json() as Post & { error?: string }
+        if ((post as { error?: string }).error) throw new Error((post as { error?: string }).error)
+      }
       if (publish && selectedAccount) {
         const pubRes = await fetch(`/api/posts/${post.id}/publish`, { method: 'POST' })
         if (!pubRes.ok) {
@@ -365,6 +384,7 @@ export default function ThreadsGeneratePage() {
     setImageUrl('')
     setImageEditPrompt('')
     setSavedPost(null)
+    setDraftId(null)
     setThemeSuggestions([])
     setReferencePost('')
     setSelectedRefAccount('')

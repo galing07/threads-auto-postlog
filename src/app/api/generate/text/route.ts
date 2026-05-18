@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
       postType?: string
       referencePost?: string
       referenceAccountName?: string
+      draftId?: string
     }
     const theme = typeof body.theme === 'string' ? body.theme.trim().slice(0, 200) : ''
     if (!theme) {
@@ -109,7 +110,50 @@ export async function POST(req: NextRequest) {
       promptTemplate,
       apiKey,
     })
-    return NextResponse.json(result)
+
+    // 生成完了時に下書きを自動保存（ページ離脱しても結果が残る）
+    // 再生成時は既存 draftId を更新し、下書きの乱立を防ぐ
+    let draftId = typeof body.draftId === 'string' && body.draftId ? body.draftId : null
+    const draftFields = {
+      text_content: result.content,
+      summary: result.summary || null,
+      theme: theme || null,
+    }
+    try {
+      if (draftId) {
+        const { data: updated } = await supabase
+          .from('posts')
+          .update(draftFields)
+          .eq('id', draftId)
+          .eq('user_id', user.id)
+          .select('id')
+          .maybeSingle()
+        if (!updated) draftId = null // 他人/不正な id は無視して新規作成へ
+      }
+      if (!draftId) {
+        const { data: inserted } = await supabase
+          .from('posts')
+          .insert({
+            user_id: user.id,
+            account_id: accountId ?? null,
+            status: 'draft',
+            ...draftFields,
+          })
+          .select('id')
+          .single()
+        draftId = inserted?.id ?? null
+        if (draftId) {
+          await supabase.from('post_logs').insert({
+            post_id: draftId, action: 'generated', message: '自動下書き保存',
+          })
+        }
+      }
+    } catch (e) {
+      // 下書き保存に失敗しても生成結果自体は返す（致命にしない）
+      console.error('[generate/text] draft autosave failed', e instanceof Error ? e.message : 'unknown')
+    }
+
+    return NextResponse.json({ ...result, draftId })
   } catch (e) {
     if (e instanceof MissingApiKeyError) {
       return NextResponse.json({ error: e.message }, { status: 400 })

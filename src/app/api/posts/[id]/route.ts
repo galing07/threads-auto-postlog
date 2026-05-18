@@ -15,7 +15,12 @@ export async function PATCH(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-    const body = await req.json() as { status?: string }
+    const body = await req.json() as {
+      status?: string
+      textContent?: string
+      imageUrl?: string | null
+      summary?: string | null
+    }
 
     if (body.status && !ALLOWED_PATCH_STATUSES.has(body.status as PostStatus)) {
       return NextResponse.json({ error: '指定できない status です' }, { status: 400 })
@@ -49,8 +54,23 @@ export async function PATCH(
       return NextResponse.json({ error: '投稿が見つかりません' }, { status: 404 })
     }
 
-    const updates: { status?: string } = {}
+    const updates: {
+      status?: string
+      text_content?: string
+      image_url?: string | null
+      summary?: string | null
+    } = {}
     if (body.status) updates.status = body.status
+    if (typeof body.textContent === 'string') updates.text_content = body.textContent.slice(0, 5000)
+    if (body.imageUrl !== undefined) {
+      updates.image_url = typeof body.imageUrl === 'string' && body.imageUrl ? body.imageUrl.slice(0, 2048) : null
+    }
+    if (body.summary !== undefined) {
+      updates.summary = typeof body.summary === 'string' && body.summary ? body.summary.slice(0, 300) : null
+    }
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: '更新内容がありません' }, { status: 400 })
+    }
 
     const { data, error } = await supabase
       .from('posts')
