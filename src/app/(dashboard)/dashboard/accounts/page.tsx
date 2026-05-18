@@ -79,7 +79,7 @@ const SETUP_GUIDES: Record<SupportedPlatform, SetupGuide> = {
     ],
     steps: [
       '【初回のみ】Developer Portal で Project と App を作成',
-      '⚠️必須: App の「User authentication settings」→「Set up」→ App permissions を「Read and write」にして保存（Read only だと投稿できません）',
+      '⚠️必須: App の「Settings」→アプリの権限を「Read and write」にして保存（Read only だと投稿できません）',
       '「Keys and tokens」タブを開く',
       'Consumer Keys（API Key / API Key Secret）を控える（API Key Secret は1回しか表示されないので必ずコピー）',
       'Authentication Tokens の「Access Token and Secret」で「Generate」を押し、Access Token / Access Token Secret を控える（こちらも1回限り表示）',
