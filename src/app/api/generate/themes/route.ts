@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { fetchAccountPromptExtra, appendUserExtra } from '@/lib/ai/prompt-settings'
+import { fetchAccountPromptTemplate } from '@/lib/ai/prompt-settings'
+import { resolvePrompt, DEFAULT_THEMES_PROMPT_TEMPLATE } from '@/lib/ai/prompt-presets'
 import { requireApiKey, MissingApiKeyError } from '@/lib/ai/api-keys'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import type { Account } from '@/types/database'
@@ -61,25 +62,19 @@ export async function POST(req: NextRequest) {
     const audience = account.target_audience ?? '20代社会人'
     const persona = account.persona ?? '転職アドバイザー'
 
-    const avoidSection = usedThemes.length > 0
-      ? `\n\n【すでに投稿済み・使用済みのテーマ（これらと被らないこと）】\n${usedThemes.map(t => `- ${t}`).join('\n')}`
-      : ''
+    const usedBlock = usedThemes.length > 0
+      ? usedThemes.map(t => `- ${t}`).join('\n')
+      : '（まだ投稿がありません）'
 
-    const basePrompt = `${persona}として、${audience}向けのThreads投稿テーマを15個考えてください。
-テーマ一覧：${topics}${avoidSection}
-
-条件：
-- 具体的で検索・共感されやすいタイトル
-- バズ型・共感型・数字型・体験談型・問いかけ型をバランスよく混ぜる
-- 各テーマは20〜40文字程度
-- すでに投稿済みのテーマと内容・切り口が被らないこと
-- 必ずJSON配列で返す
-
-返答形式（他の文章は不要）：
-["テーマ1", "テーマ2", "テーマ3", "テーマ4", "テーマ5", "テーマ6"]`
-
-    const userExtra = await fetchAccountPromptExtra(accountId, 'themes')
-    const prompt = appendUserExtra(basePrompt, userExtra)
+    // 保存テンプレ（全文）があればそれを、無ければデフォルトを使用し変数置換
+    const tpl = await fetchAccountPromptTemplate(accountId, 'themes')
+    const template = (tpl && tpl.trim()) ? tpl : DEFAULT_THEMES_PROMPT_TEMPLATE
+    const prompt = resolvePrompt(template, {
+      persona,
+      audience,
+      topics,
+      usedThemes: usedBlock,
+    })
 
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',

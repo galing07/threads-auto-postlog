@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Sparkles, ImageIcon, Send, Save, RefreshCw, ChevronLeft,
   CheckCircle, Lightbulb, Wand2, BookOpen, ChevronDown, ChevronUp,
-  X, Upload, MessageCircle,
+  X, Upload, MessageCircle, FileText,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
@@ -34,6 +34,59 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+interface PromptResponse {
+  account_id: string
+  text_prompt: string | null
+  image_prompt: string | null
+  themes_prompt: string | null
+  text_default: string
+  image_default: string
+  themes_default: string
+  updated_at: string | null
+}
+
+type PromptPanelStatus = 'idle' | 'loading' | 'loaded' | 'error'
+
+function PromptPanelBody({ status, text }: { status: PromptPanelStatus; text: string }) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#E9F7F9]">
+          <FileText className="h-3.5 w-3.5 text-[#00A3BF]" />
+        </div>
+        <p className="text-sm font-semibold" style={{ color: '#061b31' }}>
+          このアカウントで使われるプロンプト
+        </p>
+      </div>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">
+        <span className="font-mono">{'{波括弧}'}</span> の部分は生成時に実際の値へ置換されます。編集は
+        <Link href="/dashboard/prompts" className="mx-0.5 font-medium text-[#006F83] underline hover:text-[#005A6B]">
+          『プロンプト』ページ
+        </Link>
+        から。
+      </p>
+      <div className="mt-3 max-h-[60vh] overflow-auto rounded-md border border-[#e5edf5] bg-[#F8FAFC] p-3 lg:max-h-[calc(100vh-13rem)]">
+        {status === 'idle' && (
+          <p className="text-[11px] leading-relaxed text-gray-400">
+            アカウントを選択すると、そのアカウントで使われるプロンプトが表示されます
+          </p>
+        )}
+        {status === 'loading' && (
+          <p className="text-[11px] leading-relaxed text-gray-400">読み込み中...</p>
+        )}
+        {status === 'error' && (
+          <p className="text-[11px] leading-relaxed text-red-500">プロンプトの取得に失敗しました</p>
+        )}
+        {status === 'loaded' && (
+          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-gray-700">
+            {text}
+          </pre>
+        )}
+      </div>
+    </>
+  )
+}
+
 export default function ThreadsGeneratePage() {
   const toast = useToast()
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -56,7 +109,36 @@ export default function ThreadsGeneratePage() {
   const [referencePost, setReferencePost] = useState('')
   const [referenceImage, setReferenceImage] = useState<{ base64: string; mimeType: string } | null>(null)
 
+  const [promptText, setPromptText] = useState('')
+  const [promptStatus, setPromptStatus] = useState<PromptPanelStatus>('idle')
+
   const { themeSuggestions, setThemeSuggestions, suggestLoading, suggestThemes } = useThemeSuggestions(selectedAccount)
+
+  useEffect(() => {
+    if (!selectedAccount) {
+      setPromptStatus('idle')
+      setPromptText('')
+      return
+    }
+    let cancelled = false
+    setPromptStatus('loading')
+    fetch(`/api/prompts?accountId=${encodeURIComponent(selectedAccount)}`)
+      .then(async r => {
+        if (!r.ok) throw new Error(`status ${r.status}`)
+        return await r.json() as PromptResponse
+      })
+      .then(data => {
+        if (cancelled) return
+        setPromptText(data.text_prompt ?? data.text_default)
+        setPromptStatus('loaded')
+      })
+      .catch(e => {
+        if (cancelled) return
+        console.error('[generate/threads] prompt load failed', e)
+        setPromptStatus('error')
+      })
+    return () => { cancelled = true }
+  }, [selectedAccount])
 
   useEffect(() => {
     Promise.all([
@@ -242,7 +324,8 @@ export default function ThreadsGeneratePage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-2xl">
+    <div className="p-6 lg:p-8 max-w-5xl lg:flex lg:items-start lg:gap-6">
+      <div className="min-w-0 lg:flex-1">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
@@ -574,6 +657,30 @@ export default function ThreadsGeneratePage() {
           </div>
         </div>
       )}
+
+        {/* モバイル/中画面: フォーム下に折りたたみ */}
+        <details className="mt-6 rounded-lg border border-[#e5edf5] bg-white p-4 lg:hidden">
+          <summary className="cursor-pointer select-none text-sm font-semibold text-[#006F83]">
+            このアカウントで使われるプロンプトを表示
+          </summary>
+          <div className="mt-3">
+            <PromptPanelBody status={promptStatus} text={promptText} />
+          </div>
+        </details>
+      </div>
+
+      {/* lg以上: 右に常時表示パネル */}
+      <aside className="mt-6 hidden w-full lg:mt-0 lg:block lg:w-80 lg:shrink-0 lg:sticky lg:top-6">
+        <div
+          className="relative w-full rounded-lg bg-white p-5 text-left"
+          style={{
+            border: '1px solid #e5edf5',
+            boxShadow: 'rgba(50,50,93,0.08) 0px 8px 20px -8px, rgba(0,0,0,0.05) 0px 5px 10px -5px',
+          }}
+        >
+          <PromptPanelBody status={promptStatus} text={promptText} />
+        </div>
+      </aside>
     </div>
   )
 }
