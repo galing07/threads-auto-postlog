@@ -27,8 +27,14 @@ function parseKey(raw: string): Buffer {
   return buf
 }
 
+// 環境変数は貼り付け時に前後の空白・改行・引用符が混入しがちなので除去する
+function cleanEnv(v: string | undefined): string {
+  if (!v) return ''
+  return v.trim().replace(/^["']|["']$/g, '').trim()
+}
+
 function getKey(): Buffer {
-  const raw = process.env.ENCRYPTION_KEY
+  const raw = cleanEnv(process.env.ENCRYPTION_KEY)
   if (!raw) throw new Error('ENCRYPTION_KEY is not configured')
   return parseKey(raw)
 }
@@ -36,15 +42,15 @@ function getKey(): Buffer {
 /** 復号で試す鍵の一覧（現行 + ローテーション用の旧鍵）。 */
 function getDecryptKeys(): Buffer[] {
   const keys: Buffer[] = []
-  const cur = process.env.ENCRYPTION_KEY
-  const old = process.env.ENCRYPTION_KEY_OLD
+  const cur = cleanEnv(process.env.ENCRYPTION_KEY)
+  const old = cleanEnv(process.env.ENCRYPTION_KEY_OLD)
   if (cur) { try { keys.push(parseKey(cur)) } catch {} }
   if (old) { try { keys.push(parseKey(old)) } catch {} }
   return keys
 }
 
 export function isEncryptionAvailable(): boolean {
-  return !!process.env.ENCRYPTION_KEY
+  return !!cleanEnv(process.env.ENCRYPTION_KEY)
 }
 
 export function encryptSecret(plain: string): string {
