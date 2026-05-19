@@ -277,6 +277,9 @@ export default function XGeneratePage() {
         setGeneratedText(data.content)
       }
       setGeneratedSummary(data.summary ?? '')
+      // 本文が変わったら古い図解は内容と不一致になるためクリア
+      setImageUrl('')
+      setImageEditPrompt('')
       if (data.draftId) setDraftId(data.draftId)
       setStep('preview')
     } catch (e) {
@@ -305,7 +308,10 @@ export default function XGeneratePage() {
   }
 
   async function handleGenerateImage() {
-    const base = postMode === 'thread' ? threadParts.join('\n') : generatedText
+    // 図解は先頭ツイート（スレッドの主題）を基準に生成。
+    // buildImagePrompt がタイトル＝先頭行・箇条書きを抽出する設計のため、
+    // スレッド全文を改行連結すると題材がぼやけて精度が落ちる。
+    const base = postMode === 'thread' ? (threadParts[0] ?? '') : generatedText
     if (!base.trim()) return
     setImageLoading(true)
     try {

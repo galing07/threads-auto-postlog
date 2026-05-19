@@ -195,8 +195,8 @@ export async function refreshYouTubeToken(
   })
 
   if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    console.error('[YouTube OAuth]', 'refresh', res.status, errText)
+    // トークンエンドポイントのエラーボディは秘密情報をエコーし得るため status のみ記録
+    console.error('[YouTube OAuth]', 'refresh failed', res.status)
     throw new YouTubeAuthError('YouTube トークンのリフレッシュに失敗しました')
   }
 

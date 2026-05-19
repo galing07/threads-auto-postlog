@@ -73,6 +73,43 @@ function xCredentials(account: Account): XCredentials {
   }
 }
 
+const MAX_X_IMAGE_BYTES = 5 * 1024 * 1024 // X の画像上限相当
+
+/**
+ * 画像 URL をサーバー側 fetch する前の SSRF 縮小ガード。
+ * image_url はユーザーが posts API 経由で任意設定できるため、
+ * https のみ・ループバック/プライベート/メタデータ宛先を拒否する。
+ * （DNS リバインディングまでは防げないため、呼び出し側で redirect:'manual'
+ *  とサイズ上限も併用する）
+ */
+function assertFetchableImageUrl(raw: string): void {
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    throw new Error('添付画像のURLが不正です')
+  }
+  if (u.protocol !== 'https:') {
+    throw new Error('添付画像のURLは https:// である必要があります')
+  }
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (
+    host === 'localhost' ||
+    host === '::1' ||
+    host === '169.254.169.254' ||
+    host.endsWith('.local') ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^(::ffff:)?0\.0\.0\.0$/.test(host) ||
+    /^f[cd][0-9a-f]{2}:/.test(host) // fc00::/7 ユニークローカル
+  ) {
+    throw new Error('添付画像のURLのホストが許可されていません')
+  }
+}
+
 const xPublisher: Publisher = {
   platform: 'x',
   validate({ account }) {
@@ -87,9 +124,22 @@ const xPublisher: Publisher = {
     // 画像があれば X にアップロードして media_id を取得（スレッド時は先頭ツイートに添付）
     let mediaIds: string[] | undefined
     if (post.image_url) {
-      const imgRes = await fetch(post.image_url, { signal: AbortSignal.timeout(30_000) })
+      assertFetchableImageUrl(post.image_url)
+      // redirect:'manual' でリダイレクト経由の SSRF 迂回を遮断
+      const imgRes = await fetch(post.image_url, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30_000),
+      })
       if (!imgRes.ok) throw new Error('添付画像の取得に失敗しました')
-      const bytes = new Uint8Array(await imgRes.arrayBuffer())
+      const declaredLen = Number(imgRes.headers.get('content-length') ?? 0)
+      if (declaredLen > MAX_X_IMAGE_BYTES) {
+        throw new Error('添付画像が大きすぎます（5MB以下にしてください）')
+      }
+      const arrayBuf = await imgRes.arrayBuffer()
+      if (arrayBuf.byteLength > MAX_X_IMAGE_BYTES) {
+        throw new Error('添付画像が大きすぎます（5MB以下にしてください）')
+      }
+      const bytes = new Uint8Array(arrayBuf)
       const mime = imgRes.headers.get('content-type') ?? 'image/png'
       mediaIds = [await uploadXMedia(cred, bytes, mime)]
     }

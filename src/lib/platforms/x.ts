@@ -6,7 +6,10 @@
 import crypto from 'crypto'
 
 const X_API_BASE = 'https://api.twitter.com/2'
-const X_MEDIA_UPLOAD_URL = 'https://upload.twitter.com/1.1/media/upload.json'
+// v1.1 media/upload は 2025-06-09 に廃止済み。v2 へ移行。
+// OAuth 1.0a User Context で利用可（multipart は署名ベースに oauth_* のみ含める＝
+// 既存 buildOAuthHeader で正しく署名できる）。
+const X_MEDIA_UPLOAD_URL = 'https://api.x.com/2/media/upload'
 const REQUEST_TIMEOUT_MS = 30_000
 const MEDIA_UPLOAD_TIMEOUT_MS = 60_000
 
@@ -114,9 +117,10 @@ async function xGet<T>(path: string, cred: XCredentials): Promise<T> {
 }
 
 /**
- * 画像を X にアップロードして media_id を得る（v1.1 media/upload, simple upload）。
+ * 画像を X にアップロードして media_id を得る（v2 /2/media/upload, simple upload）。
  * multipart/form-data なので OAuth 署名ベースには oauth_* のみ含める
  * （buildOAuthHeader と同じ挙動でそのまま使える）。
+ * v2 のレスポンスは { data: { id, media_key, ... } } で、id を media_id として使う。
  */
 export async function uploadXMedia(
   cred: XCredentials,
@@ -125,21 +129,39 @@ export async function uploadXMedia(
 ): Promise<string> {
   const form = new FormData()
   form.append('media', new Blob([bytes as BlobPart], { type: mimeType }))
+  form.append('media_category', 'tweet_image')
+  form.append('media_type', mimeType)
+
   const res = await fetch(X_MEDIA_UPLOAD_URL, {
     method: 'POST',
     headers: { Authorization: buildOAuthHeader('POST', X_MEDIA_UPLOAD_URL, cred) },
     body: form,
     signal: AbortSignal.timeout(MEDIA_UPLOAD_TIMEOUT_MS),
   })
+
+  const raw = await res.text().catch(() => '')
   if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    console.error('[X API]', 'POST', '/media/upload', res.status, errText)
+    console.error('[X API]', 'POST', '/2/media/upload', res.status, raw.slice(0, 300))
     if (res.status === 401 || res.status === 403) throw new XAuthError()
     throw new Error(`X media upload error (HTTP ${res.status})`)
   }
-  const json = await res.json() as { media_id_string?: string }
-  if (!json.media_id_string) throw new Error('X メディアアップロードに失敗しました（media_id 取得不可）')
-  return json.media_id_string
+
+  // HTTP 200 でも data 不在 / errors を返す場合があるため明示的に検査
+  let mediaId: string | undefined
+  try {
+    const json = JSON.parse(raw) as {
+      data?: { id?: string }
+      errors?: unknown
+    }
+    mediaId = json.data?.id
+    if (!mediaId && json.errors) {
+      console.error('[X API]', '/2/media/upload returned errors', JSON.stringify(json.errors).slice(0, 300))
+    }
+  } catch {
+    console.error('[X API]', '/2/media/upload non-JSON response', raw.slice(0, 200))
+  }
+  if (!mediaId) throw new Error('X メディアアップロードに失敗しました（media_id 取得不可）')
+  return mediaId
 }
 
 export async function createXTweet(

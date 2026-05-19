@@ -192,16 +192,13 @@ export async function getTikTokPublishStatus(
   const data = await tiktokRequest<{
     status: string
     fail_reason?: string
-    publicaly_available_post_id?: string[]
     publicly_available_post_id?: string[]
   }>('/post/publish/status/fetch/', cred.accessToken, { publish_id: publishId })
 
   return {
     status: data.status,
     failReason: data.fail_reason,
-    // TikTok のレスポンスはタイポ揺れがあるため両方拾う
-    publiclyAvailablePostId:
-      data.publicly_available_post_id ?? data.publicaly_available_post_id,
+    publiclyAvailablePostId: data.publicly_available_post_id,
   }
 }
 
@@ -250,8 +247,8 @@ export async function refreshTikTokToken(
   })
 
   if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    console.error('[TikTok OAuth]', 'refresh', res.status, errText)
+    // トークンエンドポイントのエラーボディは秘密情報をエコーし得るため status のみ記録
+    console.error('[TikTok OAuth]', 'refresh failed', res.status)
     throw new TikTokAuthError('TikTok トークンのリフレッシュに失敗しました')
   }
 
