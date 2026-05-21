@@ -1,17 +1,19 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronDown, ChevronUp, Send } from 'lucide-react'
+import { ChevronLeft, ChevronDown, ChevronUp, RefreshCw, Send, AlertCircle, Smartphone } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
 import { cx } from '@/lib/utils'
 import { VideoStatusBadge, NON_TERMINAL_STATUSES } from './VideoStatusBadge'
 import { SceneRow } from './SceneRow'
+import { PublishTikTokModal } from './PublishTikTokModal'
 import type { Account, Platform, Scene, VideoStatus, VideoWithScenes } from '@/types/database'
 
 const POLL_INTERVAL_MS = 3000
+const ESTIMATED_TOTAL_MS = 3 * 60 * 1000 // 平均3分の見積もり
 
 interface StatusResponse {
   status: VideoStatus
@@ -27,6 +29,16 @@ interface VideoDetailProps {
 
 type Regenerating = { sceneId: string; target: 'image' | 'audio' } | null
 
+const STEP_LABEL: Record<VideoStatus, string> = {
+  draft: '生成準備中',
+  generating_script: '台本を書いています',
+  generating_images: '画像を作っています',
+  generating_voice: '音声を作っています',
+  rendering: '動画を書き出しています',
+  ready: '完成',
+  failed: '失敗',
+}
+
 export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
   const toast = useToast()
   const [video, setVideo] = useState<VideoWithScenes>(initialVideo)
@@ -34,14 +46,64 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
   const [statusInfo, setStatusInfo] = useState<StatusResponse | null>(null)
   const [regenerating, setRegenerating] = useState<Regenerating>(null)
   const [publishingTo, setPublishingTo] = useState<Platform | null>(null)
+  const [tiktokModalOpen, setTiktokModalOpen] = useState(false)
+  const [restarting, setRestarting] = useState(false)
 
-  const [selectedTiktok, setSelectedTiktok] = useState('')
   const [selectedYoutube, setSelectedYoutube] = useState('')
+
+  // 開始時刻を追跡（残り時間推定用）
+  const generationStartRef = useRef<number | null>(null)
+  const [elapsedMs, setElapsedMs] = useState(0)
 
   const tiktokAccounts = useMemo(() => videoAccounts.filter(a => a.platform === 'tiktok'), [videoAccounts])
   const youtubeAccounts = useMemo(() => videoAccounts.filter(a => a.platform === 'youtube'), [videoAccounts])
 
   const isPolling = NON_TERMINAL_STATUSES.has(video.status)
+
+  // 完了時のブラウザ通知許可リクエスト（生成中になったらまず聞く）
+  useEffect(() => {
+    if (!isPolling) return
+    if (typeof window === 'undefined') return
+    if (!('Notification' in window)) return
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => undefined)
+    }
+  }, [isPolling])
+
+  // 完了検知時にブラウザ通知
+  const lastStatusRef = useRef<VideoStatus>(video.status)
+  useEffect(() => {
+    const prev = lastStatusRef.current
+    lastStatusRef.current = video.status
+    if (prev !== 'ready' && video.status === 'ready') {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('動画が完成しました', { body: video.title ?? '' })
+        } catch {}
+      }
+    }
+    if (prev !== 'failed' && video.status === 'failed') {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('動画の生成に失敗しました', { body: video.title ?? '' })
+        } catch {}
+      }
+    }
+  }, [video.status, video.title])
+
+  // 経過時間タイマー（残り時間表示用）
+  useEffect(() => {
+    if (!isPolling) {
+      generationStartRef.current = null
+      setElapsedMs(0)
+      return
+    }
+    if (generationStartRef.current == null) generationStartRef.current = Date.now()
+    const tick = () => setElapsedMs(Date.now() - (generationStartRef.current ?? Date.now()))
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [isPolling])
 
   const refreshVideo = useCallback(async () => {
     const res = await fetch(`/api/videos/${video.id}`)
@@ -50,7 +112,6 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
     setVideo(data)
   }, [video.id])
 
-  // ステータスポーリング: 非終端状態の間だけ 3 秒間隔で叩く
   const [pollErrorCount, setPollErrorCount] = useState(0)
   const POLL_ERROR_THRESHOLD = 5
 
@@ -73,7 +134,6 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
         if (cancelled) return
         setPollErrorCount(c => {
           const next = c + 1
-          // 連続失敗が閾値を超えたらユーザーに通知
           if (next === POLL_ERROR_THRESHOLD) {
             toast.error('進捗の取得に繰り返し失敗しています。通信状況を確認してください。')
           }
@@ -105,41 +165,56 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
         return
       }
       toast.success(target === 'image' ? '画像を再生成しています' : '音声を再生成しています')
-      // refresh later via polling
     } finally {
       setRegenerating(null)
     }
   }
 
-  async function handlePublish(platform: 'tiktok' | 'youtube') {
-    const accountId = platform === 'tiktok' ? selectedTiktok : selectedYoutube
-    if (!accountId) {
+  async function handleRestart() {
+    setRestarting(true)
+    try {
+      const res = await fetch(`/api/videos/${video.id}/restart`, { method: 'POST' })
+      const data = await res.json().catch(() => ({})) as { error?: string; ok?: boolean }
+      if (!res.ok || !data.ok) {
+        toast.error(data.error ?? '再開に失敗しました')
+        return
+      }
+      toast.success('生成を再開しました')
+      await refreshVideo()
+    } finally {
+      setRestarting(false)
+    }
+  }
+
+  async function handlePublishYouTube() {
+    if (!selectedYoutube) {
       toast.error('公開先アカウントを選択してください')
       return
     }
-    setPublishingTo(platform)
+    setPublishingTo('youtube')
     try {
-      const res = await fetch(`/api/videos/${video.id}/publish/${platform}`, {
+      const res = await fetch(`/api/videos/${video.id}/publish/youtube`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId }),
+        body: JSON.stringify({ accountId: selectedYoutube }),
       })
-      const data = await res.json().catch(() => ({})) as { error?: string; success?: boolean; url?: string | null; platformPublishId?: string }
+      const data = await res.json().catch(() => ({})) as { error?: string; success?: boolean }
       if (!res.ok || !data.success) {
         toast.error(data.error ?? '公開に失敗しました')
         return
       }
-      toast.success(platform === 'tiktok' ? 'TikTok に公開しました' : 'YouTube に公開しました')
+      toast.success('YouTube に公開しました')
       await refreshVideo()
     } finally {
       setPublishingTo(null)
     }
   }
 
-  const progress = computeProgress(video, statusInfo)
+  const progress = computeContinuousProgress(video.status, statusInfo, elapsedMs)
+  const remainingMs = Math.max(0, ESTIMATED_TOTAL_MS - elapsedMs)
 
   return (
-    <div className="p-6 lg:p-8 max-w-3xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-3xl">
       <div className="mb-6">
         <Link
           href="/dashboard/videos"
@@ -155,26 +230,56 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
           <VideoStatusBadge status={video.status} />
         </div>
 
-        {/* Progress bar */}
+        {/* 進捗（生成中） */}
         {isPolling && (
-          <div className="mt-4">
+          <div className="mt-4 space-y-2 rounded-lg border border-gray-200 bg-white p-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-gray-700">{STEP_LABEL[video.status]}</span>
+              <span className="text-gray-500">
+                {statusInfo?.sceneProgress
+                  ? `${statusInfo.sceneProgress.completed} / ${statusInfo.sceneProgress.total} シーン`
+                  : `あと約 ${formatRemaining(remainingMs)}`}
+              </span>
+            </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
               <div
                 className="h-full bg-[#00A3BF] transition-all duration-500"
                 style={{ width: `${Math.round(progress * 100)}%` }}
               />
             </div>
-            {statusInfo?.sceneProgress && (
-              <p className="mt-1 text-xs text-gray-500">
-                {statusInfo.sceneProgress.completed} / {statusInfo.sceneProgress.total} シーン完了
-              </p>
-            )}
+            <p className="text-[11px] text-gray-500">
+              📌 完成まで平均3分かかります。<strong>このタブを閉じても処理は続きます</strong>。完成時にブラウザ通知でお知らせします（許可が必要）。
+            </p>
           </div>
         )}
 
-        {video.status === 'failed' && video.error_message && (
-          <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-            {video.error_message}
+        {/* 失敗時のリカバリ UI */}
+        {video.status === 'failed' && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-700">動画の生成に失敗しました</p>
+                {video.error_message && (
+                  <p className="mt-1 text-xs text-red-600 break-words">{video.error_message}</p>
+                )}
+                <p className="mt-2 text-[11px] text-red-500">
+                  途中まで作れている分（画像・音声）は残っているので、再開すれば未完了の部分だけ作り直します。
+                </p>
+                <div className="mt-2">
+                  <Button
+                    onClick={handleRestart}
+                    isLoading={restarting}
+                    loadingText="再開中..."
+                    variant="ghost"
+                    className="gap-1.5 border border-red-300 text-red-700"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    最初からやり直す
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -206,133 +311,175 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
             <SceneRow
               key={scene.id}
               scene={scene}
+              videoId={video.id}
               onRegenerate={handleRegenerate}
+              onEdited={refreshVideo}
               regenerating={regenerating}
             />
           ))}
         </div>
       )}
 
-      {/* 完成プレビュー */}
+      {/* 完成プレビュー: 9:16 縦長で表示 */}
       {video.status === 'ready' && video.final_video_url && (
         <Card className="mb-4">
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">動画プレビュー</h2>
-          <video
-            src={video.final_video_url}
-            controls
-            className="w-full rounded-md"
-          />
+          <div className="mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-700">プレビュー（実機イメージ）</h2>
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">
+              <Smartphone className="h-3 w-3" /> 9:16
+            </span>
+          </div>
+          <div className="flex justify-center">
+            <div
+              className="overflow-hidden rounded-[20px] border-4 border-gray-900 bg-black shadow-lg"
+              style={{ width: 'min(280px, 70vw)', aspectRatio: '9 / 16' }}
+            >
+              <video
+                src={video.final_video_url}
+                controls
+                playsInline
+                className="h-full w-full object-cover"
+              />
+            </div>
+          </div>
+          <p className="mt-3 text-center text-[11px] text-gray-500">
+            実際の TikTok / YouTube Shorts での見え方に近い表示です
+          </p>
         </Card>
       )}
 
       {/* 公開 */}
       {video.status === 'ready' && (
         <Card>
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">公開先選択</h2>
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">公開先</h2>
 
-          <PublishRow
-            label="TikTok"
-            accounts={tiktokAccounts}
-            selected={selectedTiktok}
-            onSelect={setSelectedTiktok}
-            onPublish={() => handlePublish('tiktok')}
-            publishing={publishingTo === 'tiktok'}
-            alreadyPublished={video.published_to?.includes('tiktok') ?? false}
-          />
+          {/* TikTok */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">TikTok</span>
+              {video.published_to?.includes('tiktok') && (
+                <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">公開済み</span>
+              )}
+            </div>
+            {tiktokAccounts.length === 0 ? (
+              <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-center">
+                <p className="text-xs text-gray-600">TikTok アカウントが未連携です</p>
+                <Link
+                  href="/dashboard/accounts"
+                  className="mt-1.5 inline-block text-xs font-medium text-[#00A3BF] hover:underline"
+                >
+                  TikTok を連携する →
+                </Link>
+              </div>
+            ) : (
+              <Button
+                onClick={() => setTiktokModalOpen(true)}
+                disabled={publishingTo !== null}
+                className="w-full gap-1.5"
+              >
+                <Send className="h-4 w-4" />
+                TikTokへ公開（キャプションや公開範囲を編集）
+              </Button>
+            )}
+          </div>
 
-          <div className="mt-4">
-            <PublishRow
-              label="YouTube"
-              accounts={youtubeAccounts}
-              selected={selectedYoutube}
-              onSelect={setSelectedYoutube}
-              onPublish={() => handlePublish('youtube')}
-              publishing={publishingTo === 'youtube'}
-              alreadyPublished={video.published_to?.includes('youtube') ?? false}
-            />
+          {/* YouTube（インライン公開のまま） */}
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">YouTube Shorts</span>
+              {video.published_to?.includes('youtube') && (
+                <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">公開済み</span>
+              )}
+            </div>
+            {youtubeAccounts.length === 0 ? (
+              <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-center">
+                <p className="text-xs text-gray-600">YouTube アカウントが未連携です</p>
+                <Link
+                  href="/dashboard/accounts"
+                  className="mt-1.5 inline-block text-xs font-medium text-[#00A3BF] hover:underline"
+                >
+                  YouTube を連携する →
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={selectedYoutube}
+                  onChange={e => setSelectedYoutube(e.target.value)}
+                  aria-label="YouTube アカウント"
+                  className="min-w-0 flex-1 appearance-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
+                >
+                  <option value="">アカウントを選択</option>
+                  {youtubeAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <Button
+                  onClick={handlePublishYouTube}
+                  disabled={!selectedYoutube || publishingTo !== null}
+                  isLoading={publishingTo === 'youtube'}
+                  loadingText="公開中..."
+                  className="shrink-0 gap-1.5"
+                >
+                  <Send className="h-4 w-4" />
+                  公開
+                </Button>
+              </div>
+            )}
           </div>
         </Card>
       )}
+
+      <PublishTikTokModal
+        open={tiktokModalOpen}
+        onClose={() => setTiktokModalOpen(false)}
+        videoId={video.id}
+        accounts={tiktokAccounts}
+        defaultCaption={video.title ?? ''}
+        onPublished={refreshVideo}
+      />
     </div>
   )
 }
 
-interface PublishRowProps {
-  label: string
-  accounts: Account[]
-  selected: string
-  onSelect: (v: string) => void
-  onPublish: () => void
-  publishing: boolean
-  alreadyPublished: boolean
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return 'もう少し'
+  const sec = Math.ceil(ms / 1000)
+  if (sec < 60) return `${sec}秒`
+  const min = Math.ceil(sec / 60)
+  return `${min}分`
 }
 
-function PublishRow({
-  label, accounts, selected, onSelect, onPublish, publishing, alreadyPublished,
-}: PublishRowProps) {
-  const disabled = accounts.length === 0 || !selected || publishing
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</span>
-        {alreadyPublished && (
-          <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
-            公開済み
-          </span>
-        )}
-      </div>
-      <div className="flex gap-2">
-        <select
-          value={selected}
-          onChange={e => onSelect(e.target.value)}
-          aria-label={`${label} アカウント`}
-          disabled={accounts.length === 0}
-          className={cx(
-            'min-w-0 flex-1 appearance-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden transition focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20',
-            accounts.length === 0 && 'opacity-50',
-          )}
-        >
-          {accounts.length === 0 ? (
-            <option value="">{label} アカウントが未登録</option>
-          ) : (
-            <>
-              <option value="">アカウントを選択</option>
-              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </>
-          )}
-        </select>
-        <Button
-          onClick={onPublish}
-          disabled={disabled}
-          isLoading={publishing}
-          loadingText="公開中..."
-          className="shrink-0 gap-1.5"
-        >
-          <Send className="h-4 w-4" />
-          公開する
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function computeProgress(video: VideoWithScenes, status: StatusResponse | null): number {
-  switch (video.status) {
+/**
+ * 離散ステップ + 経過時間から、連続的な進捗 (0..1) を出す。
+ * ステップが進めばその下限まで一気に飛び、ステップ内では経過時間で滑らかに進む。
+ */
+function computeContinuousProgress(
+  status: VideoStatus,
+  info: StatusResponse | null,
+  elapsedMs: number,
+): number {
+  const elapsedFrac = Math.min(1, elapsedMs / ESTIMATED_TOTAL_MS)
+  switch (status) {
     case 'draft':
     case 'generating_script':
-      return 0.1
-    case 'generating_images':
-      if (status?.sceneProgress && status.sceneProgress.total > 0) {
-        return 0.2 + (status.sceneProgress.completed / status.sceneProgress.total) * 0.4
+      return Math.min(0.18, 0.05 + elapsedFrac * 0.13)
+    case 'generating_images': {
+      const base = 0.2
+      const span = 0.4
+      if (info?.sceneProgress && info.sceneProgress.total > 0) {
+        return base + (info.sceneProgress.completed / info.sceneProgress.total) * span
       }
-      return 0.3
-    case 'generating_voice':
-      if (status?.sceneProgress && status.sceneProgress.total > 0) {
-        return 0.6 + (status.sceneProgress.completed / status.sceneProgress.total) * 0.2
+      return Math.min(base + span - 0.05, base + elapsedFrac * span)
+    }
+    case 'generating_voice': {
+      const base = 0.6
+      const span = 0.2
+      if (info?.sceneProgress && info.sceneProgress.total > 0) {
+        return base + (info.sceneProgress.completed / info.sceneProgress.total) * span
       }
-      return 0.7
+      return Math.min(base + span - 0.02, base + elapsedFrac * span)
+    }
     case 'rendering':
-      return 0.9
+      return Math.min(0.97, 0.85 + elapsedFrac * 0.12)
     case 'ready':
       return 1
     case 'failed':

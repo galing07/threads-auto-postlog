@@ -272,6 +272,12 @@ export interface VideoPublishOptions {
   categoryId?: string
   /** TikTok: アカウントの公開範囲。デフォルト 'SELF_ONLY'（unaudited app は SELF_ONLY 必須） */
   tiktokPrivacyLevel?: TikTokPrivacy
+  /** TikTok: コメント無効化 */
+  tiktokDisableComment?: boolean
+  /** TikTok: デュエット無効化 */
+  tiktokDisableDuet?: boolean
+  /** TikTok: スティッチ無効化 */
+  tiktokDisableStitch?: boolean
 }
 
 export interface VideoPublishResult {
@@ -547,6 +553,9 @@ const tiktokVideoPublisher: VideoPublisher = {
         videoUrl: video.final_video_url,
         title: buildTikTokCaption(video),
         privacyLevel: privacy,
+        disableComment: options?.tiktokDisableComment ?? false,
+        disableDuet: options?.tiktokDisableDuet ?? false,
+        disableStitch: options?.tiktokDisableStitch ?? false,
       },
     )
     return { platformPublishId: result.publishId }

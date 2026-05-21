@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { publishVideo } from '@/lib/platforms/publishers'
+import { publishVideo, type VideoPublishOptions as PublisherOptions } from '@/lib/platforms/publishers'
 import type { Account, Platform, Video } from '@/types/database'
 
 interface VideoPublishOptions {
@@ -10,6 +10,13 @@ interface VideoPublishOptions {
   platform: 'tiktok' | 'youtube'
   userId: string
   supabase: SupabaseClient
+  /** プラットフォーム固有メタデータ。caption/privacy 等の上書き用 */
+  publisherOptions?: PublisherOptions
+  /**
+   * 投稿時の caption 上書き。指定があれば video.title の代わりにこれを使う。
+   * （UIで再編集できるようにするための逃げ道）
+   */
+  captionOverride?: string
 }
 
 /**
@@ -25,6 +32,8 @@ export async function publishVideoToAccount({
   platform,
   userId,
   supabase,
+  publisherOptions,
+  captionOverride,
 }: VideoPublishOptions): Promise<NextResponse> {
   if (!accountId) {
     return NextResponse.json({ error: 'accountId は必須です' }, { status: 400 })
@@ -84,7 +93,15 @@ export async function publishVideoToAccount({
   }
 
   try {
-    const result = await publishVideo({ video: v, account: account as Account })
+    // captionOverride があれば video.title を一時上書き（DB は変えない）
+    const effectiveVideo: Video = captionOverride
+      ? { ...v, title: captionOverride }
+      : v
+    const result = await publishVideo({
+      video: effectiveVideo,
+      account: account as Account,
+      options: publisherOptions,
+    })
 
     const publishedTo = Array.isArray(v.published_to) ? [...v.published_to] : []
     const platformKey = platform as Platform

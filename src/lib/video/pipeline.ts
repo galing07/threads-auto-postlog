@@ -648,6 +648,58 @@ export async function regenerateSceneImage(sceneId: string): Promise<void> {
 }
 
 /**
+ * シーンの本文 (caption_text / narration_text / image_prompt) を更新する。
+ * narration_text が変わった場合は audio_url をクリア → 呼び出し側で再生成を発火する想定。
+ * 画像プロンプトが変わった場合も image_url をクリアする。
+ * いずれにせよ final_video_url はクリアして再レンダー対象にする。
+ */
+export async function updateSceneTexts(
+  sceneId: string,
+  patch: { caption_text?: string; narration_text?: string; image_prompt?: string },
+): Promise<{ narrationChanged: boolean; imageChanged: boolean }> {
+  const scene = await loadSceneById(sceneId)
+  const updates: Record<string, unknown> = {}
+  let narrationChanged = false
+  let imageChanged = false
+
+  if (typeof patch.caption_text === 'string' && patch.caption_text !== scene.caption_text) {
+    updates.caption_text = patch.caption_text.slice(0, 500)
+  }
+  if (typeof patch.narration_text === 'string' && patch.narration_text !== scene.narration_text) {
+    updates.narration_text = patch.narration_text.slice(0, 1000)
+    updates.audio_url = null // 旧音声を無効化
+    narrationChanged = true
+  }
+  if (typeof patch.image_prompt === 'string' && patch.image_prompt !== scene.image_prompt) {
+    updates.image_prompt = patch.image_prompt.slice(0, 1000)
+    updates.image_url = null
+    imageChanged = true
+  }
+  if (Object.keys(updates).length === 0) {
+    return { narrationChanged, imageChanged }
+  }
+  await updateSceneRow(sceneId, updates)
+  // 何かしら変わったら最終MP4も古くなるので無効化
+  await createAdminClient()
+    .from('videos')
+    .update({ final_video_url: null })
+    .eq('id', scene.video_id)
+    .throwOnError()
+  return { narrationChanged, imageChanged }
+}
+
+/**
+ * failed 状態の動画を draft に戻して再投入する（idempotent な step が再走する）。
+ */
+export async function restartFailedVideo(videoId: string): Promise<void> {
+  const video = await loadVideo(videoId)
+  if (video.status !== 'failed') {
+    throw new PipelineError('failed 状態の動画のみ再開できます')
+  }
+  await updateVideoStatus(videoId, 'draft', { error_message: null })
+}
+
+/**
  * 1 シーンの音声だけを再生成する。
  */
 export async function regenerateSceneAudio(sceneId: string): Promise<void> {
