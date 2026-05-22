@@ -1,5 +1,4 @@
 import 'server-only'
-import OpenAI from 'openai'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { decryptSecret } from '@/lib/crypto'
 import { MissingApiKeyError } from '@/lib/ai/api-keys'
@@ -8,16 +7,21 @@ import { MissingApiKeyError } from '@/lib/ai/api-keys'
  * AI ショート動画スクリプト生成モジュール。
  *
  * 入力テーマ → 構造化されたシーン配列を生成する。
- * 下流の gpt-image-1（イラスト）と ElevenLabs（音声）に橋渡しする中間表現。
+ * 下流の画像生成（gpt-image-2）と ElevenLabs（音声）に橋渡しする中間表現。
+ *
+ * モデル: google/gemini-2.0-flash-001 (OpenRouter経由・高速・低コスト)
+ *   - text.ts と同じ経路で統一
+ *   - strict json_schema は gemini 側で未サポートのため json_object モードを使い、
+ *     応答は既存の手動バリデータ (validateScriptResponse) で正規化する
  *
  * 重要な分離原則:
  *   - 画像 = イラストのみ。文字テロップは絶対に画像に含めない（Remotion 側で重ねる）
  *   - caption_text = Remotion で表示するテロップ
  *   - narration_text = ElevenLabs に渡す TTS 原稿
- *   - image_prompt   = gpt-image-1 に渡すイラスト指示（英語推奨、no-text 指示込み）
+ *   - image_prompt   = 画像生成に渡すイラスト指示（英語推奨、no-text 指示込み）
  */
 
-const OPENAI_MODEL = 'gpt-4o-mini'
+const OPENROUTER_MODEL = 'google/gemini-2.0-flash-001'
 const REQUEST_TIMEOUT_MS = 60_000
 const MIN_SCENES = 3
 const DEFAULT_SCENE_COUNT_MIN = 5
@@ -59,7 +63,7 @@ export interface GenerateScriptOptions {
 }
 
 export interface GenerateScriptContext {
-  /** OpenAI API キーを取得するための Supabase ユーザー ID */
+  /** OpenRouter API キーを取得するための Supabase ユーザー ID */
   userId: string
 }
 
@@ -71,61 +75,30 @@ export class ScriptGenerationError extends Error {
 }
 
 /**
- * 指定 userId の OpenAI API キーを admin client 経由で取得する。
+ * 指定 userId の OpenRouter API キーを admin client 経由で取得する。
  * ジョブ実行などセッション cookie が無い文脈で呼ばれる前提。
  */
-async function fetchOpenAiKeyForUser(userId: string): Promise<string> {
+async function fetchOpenRouterKeyForUser(userId: string): Promise<string> {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('user_api_keys')
-    .select('openai_key')
+    .select('openrouter_key')
     .eq('user_id', userId)
     .maybeSingle()
 
   if (error) {
     throw new ScriptGenerationError(
-      `OpenAI API キーの取得に失敗しました: ${error.message}`,
+      `OpenRouter API キーの取得に失敗しました: ${error.message}`,
       error,
     )
   }
 
-  const decrypted = decryptSecret(data?.openai_key ?? null)?.trim() || null
+  const decrypted = decryptSecret(data?.openrouter_key ?? null)?.trim() || null
   if (!decrypted) {
-    throw new MissingApiKeyError('openai')
+    throw new MissingApiKeyError('openrouter')
   }
   return decrypted
 }
-
-/**
- * OpenAI structured output 用の JSON Schema。
- * `additionalProperties: false` + 全フィールドを required にすることで
- * strict mode を有効化し、応答の決定性を担保する。
- */
-const VIDEO_SCRIPT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['title', 'script', 'scenes'],
-  properties: {
-    title: { type: 'string', minLength: 1, maxLength: 80 },
-    script: { type: 'string', minLength: 1 },
-    scenes: {
-      type: 'array',
-      minItems: MIN_SCENES,
-      maxItems: 12,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['caption_text', 'narration_text', 'image_prompt', 'duration'],
-        properties: {
-          caption_text: { type: 'string', minLength: 1, maxLength: 60 },
-          narration_text: { type: 'string', minLength: 1, maxLength: 400 },
-          image_prompt: { type: 'string', minLength: 1, maxLength: 800 },
-          duration: { type: 'number', minimum: SCENE_MIN_DURATION, maximum: SCENE_MAX_DURATION },
-        },
-      },
-    },
-  },
-} as const
 
 interface SystemPromptParams {
   targetDurationSec: number
@@ -146,18 +119,33 @@ function buildSystemPrompt({
 2. 各シーンには 3 つの独立したテキスト要素がある。役割を混同しないこと:
    - caption_text: Remotion でオーバーレイ表示するテロップ。短く、1〜2行、視覚的に読みやすい日本語。装飾記号や絵文字は最小限。最大40字程度。
    - narration_text: ElevenLabs が読み上げる TTS 原稿。自然な話し言葉。句読点（、。）で TTS が自然に間を取れるよう配置する。記号・括弧・絵文字は使わない。1シーンあたり日本語30〜200字目安。
-   - image_prompt: gpt-image-1 に渡す英語の画像生成プロンプト。イラストのみ。
+   - image_prompt: 画像生成に渡す英語の画像生成プロンプト。イラストのみ。
 3. 【最重要】image_prompt には絶対に文字・テキスト・キャプション・ロゴ・タイポグラフィ要素を含めない。必ず英語で書き、末尾に "Illustration only. No text, no letters, no captions, no logos, no typography, no watermarks." を必ず明記する。スタイル指定（flat illustration, soft colors など）は OK。
 4. duration（秒）は narration_text の長さに比例。日本語は約 ${JP_CHARS_PER_SECOND} 文字/秒で読まれる想定で算出し、${SCENE_MIN_DURATION}〜${SCENE_MAX_DURATION} 秒に収める。
 5. 全シーンの duration 合計は目安 ${targetDurationSec} 秒前後。
 6. script フィールドには動画全体の台本を markdown で要約（レビュー用）。caption と narration の流れがわかる形にする。
-7. title は視聴者がスクロールを止めたくなる短く強いフック。
+7. title は視聴者がスクロールを止めたくなる短く強いフック。最大80字。
 
 【作劇ルール】
 - 1 シーン目で必ずフックを作る（逆説・数字・問いかけ等）
 - 中盤で具体例 / 体験談 / リストを展開
 - 最終シーンで明確な結論や次のアクションを提示
-- caption_text と narration_text は意味的に対応させつつ、テロップは要約、ナレーションは肉付け、という役割分担を保つ`
+- caption_text と narration_text は意味的に対応させつつ、テロップは要約、ナレーションは肉付け、という役割分担を保つ
+
+【出力フォーマット】
+必ず以下の JSON 形式のみを返す。説明文・コードフェンス・前置きは一切不要。
+{
+  "title": "string",
+  "script": "string (markdown可)",
+  "scenes": [
+    {
+      "caption_text": "string (最大40字)",
+      "narration_text": "string (30〜200字)",
+      "image_prompt": "string (英語、文字なし指示込み)",
+      "duration": 5.0
+    }
+  ]
+}`
 }
 
 function buildUserPrompt(theme: string, targetDurationSec: number, sceneCountMin: number, sceneCountMax: number): string {
@@ -167,7 +155,7 @@ function buildUserPrompt(theme: string, targetDurationSec: number, sceneCountMin
 目安シーン数: ${sceneCountMin}〜${sceneCountMax}
 
 このテーマで日本語ショート動画スクリプトを 1 本生成してください。
-JSON Schema に従って構造化された出力のみを返してください。`
+指定した JSON 形式のみを返してください。`
 }
 
 interface RawScene {
@@ -192,7 +180,32 @@ function snippet(raw: string, len = 400): string {
 }
 
 /**
- * OpenAI 応答を VideoScriptDraft に検証・正規化する。
+ * モデルが code fence や説明文を混ぜることがあるため、最も外側の {...} を堅牢に抽出する。
+ * JSON が破損していた場合は null を返す。
+ */
+function extractJsonObject(raw: string): unknown | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+
+  // 直接 JSON.parse できる場合（json_object モードでは通常こちら）
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    // 続けて括弧抽出を試みる
+  }
+
+  const start = trimmed.indexOf('{')
+  const end = trimmed.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return null
+  try {
+    return JSON.parse(trimmed.slice(start, end + 1))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * OpenRouter 応答を VideoScriptDraft に検証・正規化する。
  * Zod が無いプロジェクトのため、明示的な手動バリデーションで型と制約を確認する。
  */
 function validateScriptResponse(parsed: unknown, rawText: string): VideoScriptDraft {
@@ -243,7 +256,13 @@ function validateScriptResponse(parsed: unknown, rawText: string): VideoScriptDr
         `scene[${index}].image_prompt が不正です: ${snippet(rawText)}`,
       )
     }
-    if (typeof s.duration !== 'number' || !Number.isFinite(s.duration)) {
+    // duration が文字列で返ることがあるため number への昇格を許容
+    const durationNum = typeof s.duration === 'number'
+      ? s.duration
+      : typeof s.duration === 'string'
+      ? Number(s.duration)
+      : NaN
+    if (!Number.isFinite(durationNum)) {
       throw new ScriptGenerationError(
         `scene[${index}].duration が不正です: ${snippet(rawText)}`,
       )
@@ -256,7 +275,7 @@ function validateScriptResponse(parsed: unknown, rawText: string): VideoScriptDr
     )
     const modelDuration = Math.max(
       SCENE_MIN_DURATION,
-      Math.min(SCENE_MAX_DURATION, s.duration),
+      Math.min(SCENE_MAX_DURATION, durationNum),
     )
     const duration = Math.abs(modelDuration - estimatedDuration) > 3
       ? estimatedDuration
@@ -280,7 +299,7 @@ function validateScriptResponse(parsed: unknown, rawText: string): VideoScriptDr
 /**
  * テーマからショート動画スクリプトを生成する。
  *
- * @throws {MissingApiKeyError} ユーザーが OpenAI API キーを未登録の場合
+ * @throws {MissingApiKeyError} ユーザーが OpenRouter API キーを未登録の場合
  * @throws {ScriptGenerationError} 生成 / パース / バリデーション失敗時
  */
 export async function generateVideoScript(
@@ -299,13 +318,7 @@ export async function generateVideoScript(
   const sceneCountMin = opts.sceneCount ?? DEFAULT_SCENE_COUNT_MIN
   const sceneCountMax = opts.sceneCount ?? DEFAULT_SCENE_COUNT_MAX
 
-  const apiKey = await fetchOpenAiKeyForUser(ctx.userId)
-
-  const client = new OpenAI({
-    apiKey,
-    timeout: REQUEST_TIMEOUT_MS,
-    maxRetries: 1,
-  })
+  const apiKey = await fetchOpenRouterKeyForUser(ctx.userId)
 
   const systemPrompt = buildSystemPrompt({
     targetDurationSec,
@@ -316,42 +329,52 @@ export async function generateVideoScript(
 
   let rawContent: string
   try {
-    const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
-      temperature: 0.8,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'video_script_draft',
-          strict: true,
-          schema: VIDEO_SCRIPT_SCHEMA,
-        },
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'https://sns-auto-post.vercel.app',
+        'X-Title': 'SNS Auto Post',
       },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        temperature: 0.8,
+        // gemini は strict json_schema 未サポートのため json_object を使う
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
 
-    rawContent = completion.choices[0]?.message?.content ?? ''
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      console.error('[OpenRouter script]', res.status, errText)
+      throw new ScriptGenerationError(`OpenRouter 呼び出しに失敗しました (HTTP ${res.status})`)
+    }
+
+    const json = await res.json() as {
+      choices?: Array<{ message?: { content?: string } }>
+    }
+    rawContent = json.choices?.[0]?.message?.content ?? ''
     if (!rawContent) {
-      throw new ScriptGenerationError('OpenAI 応答が空です')
+      throw new ScriptGenerationError('OpenRouter 応答が空です')
     }
   } catch (err) {
     if (err instanceof ScriptGenerationError || err instanceof MissingApiKeyError) {
       throw err
     }
     const message = err instanceof Error ? err.message : 'unknown'
-    throw new ScriptGenerationError(`OpenAI 呼び出しに失敗しました: ${message}`, err)
+    throw new ScriptGenerationError(`OpenRouter 呼び出しに失敗しました: ${message}`, err)
   }
 
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawContent)
-  } catch (err) {
+  const parsed = extractJsonObject(rawContent)
+  if (parsed === null) {
     throw new ScriptGenerationError(
-      `OpenAI 応答 JSON のパースに失敗しました: ${snippet(rawContent)}`,
-      err,
+      `OpenRouter 応答 JSON のパースに失敗しました: ${snippet(rawContent)}`,
     )
   }
 
