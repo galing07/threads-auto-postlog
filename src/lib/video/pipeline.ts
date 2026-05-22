@@ -22,7 +22,7 @@ import {
  * フェーズ:
  *   draft
  *     → generating_script   (script.ts で台本生成、scenes 行を挿入)
- *     → generating_images   (各シーンの画像を gpt-image-1 で生成)
+ *     → generating_images   (各シーンの画像を gpt-image-2 で生成)
  *     → generating_voice    (各シーンの音声を ElevenLabs で生成)
  *     → rendering           (Remotion で MP4 レンダリング)
  *     → ready               (完成)
@@ -36,7 +36,8 @@ import {
  *   - レンダーは final_video_url が空の場合のみ実行
  */
 
-const IMAGE_MODEL = 'gpt-image-1'
+// gpt-image-2 に統一（src/lib/ai/image.ts と同じモデル）
+const IMAGE_MODEL = 'gpt-image-2'
 const IMAGE_SIZE = '1024x1792' as const // 9:16 縦長 (Remotion 1080x1920 に近い比率)
 const IMAGE_TIMEOUT_MS = 120_000
 
