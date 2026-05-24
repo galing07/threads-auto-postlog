@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, Sparkles, Info } from 'lucide-react'
@@ -49,7 +49,16 @@ function SectionLabel({
   )
 }
 
+// useSearchParams() を使うため Suspense でラップして CSR bailout を許容する
 export default function NewVideoPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-gray-400">読み込み中...</div>}>
+      <NewVideoPageInner />
+    </Suspense>
+  )
+}
+
+function NewVideoPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
