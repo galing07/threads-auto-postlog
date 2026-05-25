@@ -130,7 +130,7 @@ ${imgTpl.trim().slice(0, 4000)}`
     }
 
     const imageUrl = await generateDiagramImage({ prompt: resolvedPrompt, style, apiKey: keys.openai })
-    return NextResponse.json({ imageUrl })
+    return NextResponse.json({ imageUrl, prompt: resolvedPrompt })
   } catch (e) {
     if (e instanceof MissingApiKeyError) {
       return NextResponse.json({ error: e.message }, { status: 400 })

@@ -172,7 +172,9 @@ const xPublisher: Publisher = {
       mediaIds = [await uploadXMedia(cred, bytes, mime)]
     }
 
-    const parts = text.split(/\n---\n/).map(s => s.trim()).filter(Boolean)
+    // 区切り記号は AI が生成するので揺れを吸収:
+    // `\n---\n` / `\n-----\n` / 全角ハイフン / 周辺空白
+    const parts = text.split(/\n[ \t]*[-―ー─]{3,}[ \t]*\n/).map(s => s.trim()).filter(Boolean)
     if (parts.length > 1) {
       const results = await createXThread(cred, parts, mediaIds)
       return {

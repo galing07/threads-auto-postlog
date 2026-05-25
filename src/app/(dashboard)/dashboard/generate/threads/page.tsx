@@ -136,6 +136,7 @@ export default function ThreadsGeneratePage() {
   const [generatedText, setGeneratedText] = useState('')
   const [generatedSummary, setGeneratedSummary] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [imagePrompt, setImagePrompt] = useState('')
   const [imageLoading, setImageLoading] = useState(false)
   const [imageEditPrompt, setImageEditPrompt] = useState('')
   const [imageEditing, setImageEditing] = useState(false)
@@ -258,6 +259,7 @@ export default function ThreadsGeneratePage() {
       setGeneratedSummary(data.summary ?? '')
       // 本文が変わったら古い図解は内容と不一致になるためクリア
       setImageUrl('')
+      setImagePrompt('')
       setImageEditPrompt('')
       if (data.draftId) setDraftId(data.draftId)
       setStep('preview')
@@ -283,9 +285,10 @@ export default function ThreadsGeneratePage() {
           referenceImageMimeType: referenceImage?.mimeType,
         }),
       })
-      const data = await res.json() as { imageUrl: string; error?: string }
+      const data = await res.json() as { imageUrl: string; prompt?: string; error?: string }
       if (data.error) throw new Error(data.error)
       setImageUrl(data.imageUrl)
+      setImagePrompt(data.prompt ?? '')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '画像生成に失敗しました')
     } finally {
@@ -302,9 +305,10 @@ export default function ThreadsGeneratePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrl, editPrompt: imageEditPrompt }),
       })
-      const data = await res.json() as { imageUrl: string; error?: string }
+      const data = await res.json() as { imageUrl: string; prompt?: string; error?: string }
       if (data.error) throw new Error(data.error)
       setImageUrl(data.imageUrl)
+      if (data.prompt) setImagePrompt(data.prompt)
       setImageEditPrompt('')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '画像編集に失敗しました')
@@ -385,6 +389,7 @@ export default function ThreadsGeneratePage() {
     setGeneratedText('')
     setGeneratedSummary('')
     setImageUrl('')
+    setImagePrompt('')
     setImageEditPrompt('')
     setSavedPost(null)
     setDraftId(null)
@@ -729,6 +734,16 @@ export default function ThreadsGeneratePage() {
                     {imageEditing ? '修正中...' : '修正'}
                   </button>
                 </div>
+                {imagePrompt && (
+                  <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                    <summary className="cursor-pointer text-[11px] font-medium text-gray-600 hover:text-gray-900">
+                      🔍 画像生成プロンプトを表示
+                    </summary>
+                    <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-gray-700">
+                      {imagePrompt}
+                    </pre>
+                  </details>
+                )}
               </>
             ) : (
               <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-[#e5edf5]">

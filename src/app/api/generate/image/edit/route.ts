@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
     if (!b64) throw new Error('編集後の画像データが取得できませんでした')
 
     const publicUrl = await uploadGeneratedImage(b64, 'png', 'image/png')
-    return NextResponse.json({ imageUrl: publicUrl })
+    return NextResponse.json({ imageUrl: publicUrl, prompt: editPrompt.trim() })
   } catch (e) {
     if (e instanceof MissingApiKeyError) {
       return NextResponse.json({ error: e.message }, { status: 400 })
