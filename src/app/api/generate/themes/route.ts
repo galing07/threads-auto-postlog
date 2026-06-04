@@ -103,7 +103,11 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: 'google/gemini-3.5-flash',
-        max_tokens: 800,
+        // gemini-3.5 系は reasoning トークンを消費するため、日本語15テーマの
+        // JSON 配列が途中で切れて parse 失敗 → 空配列になっていた。十分な枠を確保。
+        max_tokens: 4096,
+        // reasoning は出力に含めず内部のみ（content にトークンを回す）。
+        reasoning: { exclude: true },
         messages: [{ role: 'user', content: prompt }],
       }),
       signal: AbortSignal.timeout(60_000),
@@ -121,9 +125,18 @@ export async function POST(req: NextRequest) {
     }
 
     const json = await res.json() as { choices: Array<{ message: { content: string } }> }
-    const text = json.choices[0]?.message?.content ?? '[]'
+    const text = json.choices[0]?.message?.content ?? ''
 
     const themes = extractStringArray(text)
+    // 抽出できなかった場合は「無言で空」にせずエラーを返す。
+    // （フロントが提案を出せず原因不明になるのを防ぐ。診断用に応答先頭をログ）
+    if (themes.length === 0) {
+      console.error('[generate/themes] empty result. raw head:', text.slice(0, 300).replace(/\s+/g, ' '))
+      return NextResponse.json(
+        { error: 'テーマを生成できませんでした。もう一度お試しください', code: 'EMPTY_RESULT' },
+        { status: 502 },
+      )
+    }
     return NextResponse.json({ themes })
   } catch (e) {
     if (e instanceof MissingApiKeyError) {
