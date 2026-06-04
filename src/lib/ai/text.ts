@@ -254,6 +254,8 @@ ${recentSummaries.length > 0 ? '\n※ 過去投稿と切り口・主張・構成
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
       max_tokens: maxOutputTokens,
+      // gemini-3.5 系の思考トークン消費を抑えて応答を速く（出力からは除外）。
+      reasoning: { effort: 'low', exclude: true },
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },

@@ -103,11 +103,11 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: 'google/gemini-3.5-flash',
-        // gemini-3.5 系は reasoning トークンを消費するため、日本語15テーマの
-        // JSON 配列が途中で切れて parse 失敗 → 空配列になっていた。十分な枠を確保。
-        max_tokens: 4096,
-        // reasoning は出力に含めず内部のみ（content にトークンを回す）。
-        reasoning: { exclude: true },
+        // gemini-3.5 系は reasoning トークンを消費する。テーマ列挙は単純タスクなので
+        // 思考量を最小化(effort:low)して応答を速くしつつ、出力からは除外する。
+        // max_tokens は 15テーマ JSON が切れない十分な枠。
+        max_tokens: 2048,
+        reasoning: { effort: 'low', exclude: true },
         messages: [{ role: 'user', content: prompt }],
       }),
       signal: AbortSignal.timeout(60_000),

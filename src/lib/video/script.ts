@@ -394,6 +394,10 @@ export async function generateVideoScript(
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
         temperature: 0.8,
+        // 台本(複数シーンの JSON)は長いので十分な枠を明示。
+        // gemini-3.5 系の思考トークン消費を抑えて応答を速く（出力からは除外）。
+        max_tokens: 8192,
+        reasoning: { effort: 'low', exclude: true },
         // gemini は strict json_schema 未サポートのため json_object を使う
         response_format: { type: 'json_object' },
         messages: [
