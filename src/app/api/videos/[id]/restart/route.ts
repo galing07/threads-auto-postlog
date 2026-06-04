@@ -14,14 +14,6 @@ export async function POST(
 ) {
   const { id } = await params
   try {
-    const capability = videoCapability()
-    if (!capability.enabled) {
-      return NextResponse.json(
-        { error: capability.message, code: 'LOCAL_ONLY' },
-        { status: 503 },
-      )
-    }
-
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
@@ -29,7 +21,7 @@ export async function POST(
     // 所有者検証
     const { data: video, error: lookupErr } = await supabase
       .from('videos')
-      .select('id, status, title')
+      .select('id, status, title, generation_mode')
       .eq('id', id)
       .eq('user_id', user.id)
       .maybeSingle()
@@ -37,6 +29,16 @@ export async function POST(
     if (!video) return NextResponse.json({ error: '動画が見つかりません' }, { status: 404 })
     if (video.status !== 'failed') {
       return NextResponse.json({ error: 'failed 状態の動画のみ再開できます' }, { status: 400 })
+    }
+
+    // 実行環境の判定はモードに依存する（HeyGen はクラウドレンダで Vercel 可、
+    // Remotion は Chromium が必要でローカル限定）。所有者検証後にモードを見て判定する。
+    const capability = videoCapability(video.generation_mode ?? undefined)
+    if (!capability.enabled) {
+      return NextResponse.json(
+        { error: capability.message, code: 'LOCAL_ONLY' },
+        { status: 503 },
+      )
     }
 
     const acquired = await restartFailedVideo(id)

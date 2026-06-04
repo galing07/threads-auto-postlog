@@ -383,6 +383,10 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
   // 作り直されて多重 fetch するのを防ぐ）。
   const toastRef = useRef(toast)
   useEffect(() => { toastRef.current = toast }, [toast])
+  // ポーリング多重実行ガード。HeyGen 完了検知時に status エンドポイントが
+  // MP4 ダウンロード+保存を行い数秒〜数十秒かかる場合があり、その間に interval が
+  // 重なって発火すると重複ダウンロードになる。in-flight 中の tick はスキップする。
+  const pollInFlightRef = useRef(false)
 
   // status が動いたら停止フラグを解除して再びポーリング可能にする
   useEffect(() => {
@@ -400,6 +404,9 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
     let cancelled = false
 
     async function poll() {
+      // 前回のポーリングがまだ進行中なら今回の tick はスキップ（重複リクエスト防止）。
+      if (pollInFlightRef.current) return
+      pollInFlightRef.current = true
       try {
         const res = await fetch(`/api/videos/${video.id}/status`)
         if (!res.ok) throw new Error(`status HTTP ${res.status}`)
@@ -424,6 +431,8 @@ export function VideoDetail({ initialVideo, videoAccounts }: VideoDetailProps) {
           return next
         })
         console.error('[VideoDetail] status poll failed', e instanceof Error ? e.message : 'unknown')
+      } finally {
+        pollInFlightRef.current = false
       }
     }
 
