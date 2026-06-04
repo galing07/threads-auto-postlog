@@ -2,8 +2,8 @@ import type { Account } from '@/types/database'
 import { resolvePrompt, DEFAULT_TEXT_PROMPT_TEMPLATE } from './prompt-presets'
 
 // OpenRouter経由でテキスト生成（コスト最適化）
-// モデル: google/gemini-flash-latest (高速・低コスト)
-const OPENROUTER_MODEL = 'google/gemini-flash-latest'
+// モデル: google/gemini-3.5-flash (高速・低コスト)
+const OPENROUTER_MODEL = 'google/gemini-3.5-flash'
 const REQUEST_TIMEOUT_MS = 60_000
 
 type PostType = 'buzz' | 'empathy' | 'numbers' | 'story' | 'question'

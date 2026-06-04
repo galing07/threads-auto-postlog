@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         'X-Title': 'SNS Auto Post',
       },
       body: JSON.stringify({
-        model: 'google/gemini-flash-latest',
+        model: 'google/gemini-3.5-flash',
         max_tokens: 800,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -112,7 +112,12 @@ export async function POST(req: NextRequest) {
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
       console.error('[generate/themes] openrouter', res.status, errText)
-      return NextResponse.json({ error: 'テーマ生成に失敗しました' }, { status: 500 })
+      // OpenRouter の HTTP status をユーザー向けにも添える（数字のみ。機密は含めない）。
+      // 401=キー無効 / 402=クレジット不足 / 429=レート / 404=モデル不在 の切り分け用。
+      return NextResponse.json(
+        { error: `テーマ生成に失敗しました (OpenRouter: ${res.status})`, code: 'OPENROUTER_ERROR', openrouterStatus: res.status },
+        { status: 500 },
+      )
     }
 
     const json = await res.json() as { choices: Array<{ message: { content: string } }> }
