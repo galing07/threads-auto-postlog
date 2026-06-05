@@ -196,8 +196,6 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
         </p>
       </div>
 
-      <SetupGuide key="instagram-oauth" platform="instagram" defaultOpen={!configured} />
-
       {showForm && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Instagram アプリ設定（初回のみ）</p>
@@ -260,6 +258,8 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
           </button>
         </>
       )}
+
+      <SetupGuide key="instagram-oauth" platform="instagram" defaultOpen={false} />
 
       <Button type="button" variant="secondary" onClick={onCancel} className="w-full">
         キャンセル
