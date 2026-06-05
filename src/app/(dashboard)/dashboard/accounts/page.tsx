@@ -80,6 +80,7 @@ const SETUP_GUIDES: Record<SupportedPlatform, SetupGuide> = {
     steps: [
       '【初回のみ】Developer Portal で Project と App を作成',
       '⚠️必須: App の「Settings」→アプリの権限を「Read and write」にして保存（Read only だと投稿できません）',
+      '⚠️必須: 同じ「User authentication settings（認証設定）」画面の「アプリの種類（App type）」で「ウェブアプリ、自動化アプリまたはボット（機密クライアント / Web App）」を選択（これを選ばないと保存できず、権限変更も反映されません）',
       '同じ設定画面の「コールバックURI / リダイレクトURL」と「ウェブサイトURL」も必須（埋めないと保存できません）。本アプリはブラウザ認可フローを使わないので値は何でもOK。両方に https://threads-auto-post-git-master-riku0804s-projects.vercel.app を入れて保存',
       '「Keys and tokens（キーとトークン）」タブを開く。使うのは「OAuth 1.0 キー」の枠だけ（「ベアラートークン」と「OAuth 2.0 キー」のクライアントID/シークレットは使いません）',
       '重要: 画面の「コンシューマーキー」＝ API Key のことです（X が名前を2つ持っているだけで中身は同じ）',
