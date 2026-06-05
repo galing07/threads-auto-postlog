@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen, MessageCircle, Camera, ExternalLink, HelpCircle } from 'lucide-react'
+import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen, MessageCircle, Camera, ExternalLink, HelpCircle, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -267,11 +267,14 @@ function ReferenceAccountsSection() {
 }
 
 export default function AccountsPage() {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [showForm, setShowForm] = useState(false)
   const [showToken, setShowToken] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [formError, setFormError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [platform, setPlatform] = useState<SupportedPlatform>('threads')
@@ -369,6 +372,31 @@ export default function AccountsPage() {
     }
   }
 
+  async function handleDeleteAccount(account: Account) {
+    const ok = await confirm({
+      title: 'アカウントを削除',
+      message: `「${account.name}」を削除しますか？このアカウントの投稿履歴・テーマ案も一緒に削除されます（生成済みの動画は残ります）。この操作は取り消せません。`,
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (!ok) return
+    setDeletingId(account.id)
+    try {
+      const res = await fetch(`/api/accounts/${account.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        toast.error(data.error ?? '削除に失敗しました')
+        return
+      }
+      setAccounts(prev => prev.filter(a => a.id !== account.id))
+      toast.success(`アカウント「${account.name}」を削除しました`)
+    } catch {
+      toast.error('削除に失敗しました')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   return (
     <div className="p-6 lg:p-8 max-w-3xl">
       {/* Header */}
@@ -436,12 +464,26 @@ export default function AccountsPage() {
                     <p className="text-xs text-gray-500">{account.persona}</p>
                   </div>
                 </div>
-                <span className={cx(
-                  'rounded-full px-2.5 py-0.5 text-xs font-medium',
-                  account.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500',
-                )}>
-                  {account.is_active ? 'アクティブ' : '停止中'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={cx(
+                    'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                    account.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500',
+                  )}>
+                    {account.is_active ? 'アクティブ' : '停止中'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAccount(account)}
+                    disabled={deletingId === account.id}
+                    aria-label={`アカウント「${account.name}」を削除`}
+                    title="アカウントを削除"
+                    className="flex h-9 w-9 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingId === account.id
+                      ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                      : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-x-6 border-t border-gray-100 pt-3">
                 <div>
