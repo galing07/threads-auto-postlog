@@ -30,20 +30,25 @@ export function instagramRedirectUri(): string {
   return process.env.INSTAGRAM_REDIRECT_URI ?? `${appUrl()}/api/auth/instagram/callback`
 }
 
+function redirectToAccounts(reason: string): NextResponse {
+  // ボタンは全画面遷移（<a>）なので、生JSONを見せず画面に戻してトースト表示させる
+  const url = new URL('/dashboard/accounts', appUrl())
+  url.searchParams.set('platform', 'instagram')
+  url.searchParams.set('error', reason)
+  return NextResponse.redirect(url)
+}
+
 export async function GET() {
   const supabase = await createServerSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+    return NextResponse.redirect(new URL('/login', appUrl()))
   }
 
   const clientId = process.env.INSTAGRAM_APP_ID
   if (!clientId) {
     console.error('[instagram/oauth] INSTAGRAM_APP_ID が未設定です')
-    return NextResponse.json(
-      { error: 'Instagram 連携の設定が不足しています（管理者に連絡してください）' },
-      { status: 500 },
-    )
+    return redirectToAccounts('server_misconfigured')
   }
 
   const state = crypto.randomBytes(24).toString('hex')
