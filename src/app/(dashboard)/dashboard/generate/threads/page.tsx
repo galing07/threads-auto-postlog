@@ -37,6 +37,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function ThreadsGeneratePage() {
   const toast = useToast()
+  const [showPrompt, setShowPrompt] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [selectedAccount, setSelectedAccount] = useState('')
   const [theme, setTheme] = useState('')
@@ -282,8 +283,17 @@ export default function ThreadsGeneratePage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-5xl lg:flex lg:items-start lg:gap-6">
+    <div className={cx('p-6 lg:p-8', showPrompt ? 'max-w-5xl lg:flex lg:items-start lg:gap-6' : 'max-w-3xl mx-auto')}>
       <div className="min-w-0 lg:flex-1">
+        <div className="mb-4 hidden justify-end lg:flex">
+          <button
+            type="button"
+            onClick={() => setShowPrompt(v => !v)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-[#e5edf5] bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-[#00A3BF] hover:text-[#006F83]"
+          >
+            {showPrompt ? '✕ プロンプトを閉じる' : '⚙ プロンプトを編集'}
+          </button>
+        </div>
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
@@ -501,10 +511,17 @@ export default function ThreadsGeneratePage() {
             )}
           </div>
 
-          <Button onClick={() => handleGenerate()} disabled={!theme.trim()} isLoading={loading} loadingText="生成中..." className="w-full gap-2 py-2.5">
-            <Sparkles className="h-4 w-4" />
-            AI生成する
-          </Button>
+          <div>
+            <Button onClick={() => handleGenerate()} disabled={!theme.trim()} isLoading={loading} loadingText="生成中..." className="w-full gap-2 py-2.5">
+              <Sparkles className="h-4 w-4" />
+              AI生成する
+            </Button>
+            {!theme.trim() && !loading && (
+              <p className="mt-1.5 text-center text-xs text-gray-400">
+                💡 投稿テーマを入力すると生成できます
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -637,7 +654,8 @@ export default function ThreadsGeneratePage() {
         </details>
       </div>
 
-      {/* lg以上: 右に常時表示パネル */}
+      {/* lg以上: トグルで表示するプロンプト編集パネル */}
+      {showPrompt && (
       <aside className="mt-6 hidden w-full lg:mt-0 lg:block lg:w-80 lg:shrink-0 lg:sticky lg:top-6">
         <div
           className="relative w-full rounded-lg bg-white p-5 text-left"
@@ -649,6 +667,7 @@ export default function ThreadsGeneratePage() {
           <AccountPromptPanel accountId={selectedAccount} />
         </div>
       </aside>
+      )}
     </div>
   )
 }
