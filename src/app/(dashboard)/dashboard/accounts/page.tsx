@@ -133,6 +133,141 @@ function SetupGuide({ platform, defaultOpen }: { platform: SupportedPlatform; de
   )
 }
 
+// Instagram は OAuth でつなぐため、トークン貼り付けではなく「連携ボタン」方式。
+// 初回のみ Instagram アプリ ID / シークレットを入力（環境変数ではなくユーザーごとに暗号化保存）。
+function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
+  const toast = useToast()
+  const [loading, setLoading] = useState(true)
+  const [configured, setConfigured] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [appId, setAppId] = useState('')
+  const [appSecret, setAppSecret] = useState('')
+  const [savedAppId, setSavedAppId] = useState<string | null>(null)
+  const [showSecret, setShowSecret] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/api-keys')
+      .then(r => r.json())
+      .then((d: { has_instagram_app?: boolean; instagram_app_id?: string | null }) => {
+        setConfigured(!!d.has_instagram_app)
+        setSavedAppId(d.instagram_app_id ?? null)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  function goConnect() {
+    window.location.href = '/api/auth/instagram'
+  }
+
+  async function saveAndConnect() {
+    if (!appId.trim() || !appSecret.trim()) {
+      toast.error('アプリ ID とアプリシークレットを両方入力してください')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/api-keys', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instagramAppId: appId.trim(), instagramAppSecret: appSecret.trim() }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(d.error ?? '保存に失敗しました')
+      }
+      goConnect()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
+      setSaving(false)
+    }
+  }
+
+  const showForm = !loading && (!configured || editing)
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-pink-100 bg-pink-50/60 p-4">
+        <p className="text-sm font-semibold text-gray-800">Instagramと連携</p>
+        <p className="mt-1 text-xs leading-relaxed text-gray-600">
+          ボタンを押すとInstagramのログイン画面が開きます。投稿したいアカウントでログインして「許可」するだけで連携完了です。
+          <br />Facebookページもアクセストークンの貼り付けも不要です。
+        </p>
+      </div>
+
+      <SetupGuide key="instagram-oauth" platform="instagram" defaultOpen={!configured} />
+
+      {showForm && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Instagram アプリ設定（初回のみ）</p>
+          <p className="text-[11px] leading-relaxed text-gray-500">
+            Metaアプリの「Instagram → ビジネスログインの設定」にある アプリID / アプリシークレット を入力してください。暗号化して保存され、本人のみアクセスできます。
+          </p>
+          <div>
+            <FieldLabel>Instagram アプリ ID</FieldLabel>
+            <Input value={appId} onChange={e => setAppId(e.target.value)} placeholder="例：1234567890123456" />
+          </div>
+          <div>
+            <FieldLabel>Instagram アプリシークレット</FieldLabel>
+            <div className="relative">
+              <Input
+                type={showSecret ? 'text' : 'password'}
+                value={appSecret}
+                onChange={e => setAppSecret(e.target.value)}
+                placeholder="アプリシークレット"
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <Button
+            type="button"
+            onClick={saveAndConnect}
+            disabled={saving}
+            isLoading={saving}
+            loadingText="保存中..."
+            className="flex w-full items-center justify-center gap-2 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-orange-400 hover:from-pink-600 hover:via-fuchsia-600 hover:to-orange-500"
+          >
+            <Camera className="h-4 w-4" />
+            保存してInstagramと連携する
+          </Button>
+        </div>
+      )}
+
+      {!loading && configured && !editing && (
+        <>
+          <button
+            type="button"
+            onClick={goConnect}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-pink-500 via-fuchsia-500 to-orange-400 px-4 py-2.5 text-sm font-medium text-white shadow-xs transition hover:from-pink-600 hover:via-fuchsia-600 hover:to-orange-500"
+          >
+            <Camera className="h-4 w-4" />
+            Instagramと連携する
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="w-full text-center text-[11px] text-gray-400 hover:text-gray-600"
+          >
+            アプリ設定を変更{savedAppId ? `（現在: ${savedAppId}）` : ''}
+          </button>
+        </>
+      )}
+
+      <Button type="button" variant="secondary" onClick={onCancel} className="w-full">
+        キャンセル
+      </Button>
+    </div>
+  )
+}
+
 const PERSONAS = [
   { value: '転職ノウハウ発信者', label: '転職ノウハウ系' },
   { value: 'キャリアのプロ',     label: 'プロ目線系' },
@@ -306,6 +441,7 @@ export default function AccountsPage() {
       toast.success(`${plat === 'instagram' ? 'Instagram' : plat ?? ''}と連携しました`)
     } else if (error) {
       const map: Record<string, string> = {
+        app_not_configured: 'Instagram アプリ ID / シークレットが未設定です。連携パネルで入力してください',
         server_misconfigured: '連携の設定が不足しています（管理者に連絡してください）',
         token_exchange_failed: '連携に失敗しました。もう一度お試しください',
         state_mismatch: 'セッションが切れました。もう一度お試しください',
@@ -570,29 +706,7 @@ export default function AccountsPage() {
             <div className="max-h-[calc(90vh-120px)] overflow-y-auto p-6">
               <div className="space-y-4">
                 {platform === 'instagram' && (
-                  <div className="space-y-4">
-                    <div className="rounded-lg border border-pink-100 bg-pink-50/60 p-4">
-                      <p className="text-sm font-semibold text-gray-800">Instagramと連携</p>
-                      <p className="mt-1 text-xs leading-relaxed text-gray-600">
-                        ボタンを押すとInstagramのログイン画面が開きます。投稿したいアカウントでログインして「許可」するだけで連携完了です。
-                        <br />Facebookページもアクセストークンの貼り付けも不要です。
-                      </p>
-                    </div>
-
-                    <SetupGuide key="instagram-oauth" platform="instagram" defaultOpen={false} />
-
-                    <a
-                      href="/api/auth/instagram"
-                      className="flex w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-pink-500 via-fuchsia-500 to-orange-400 px-4 py-2.5 text-sm font-medium text-white shadow-xs transition hover:from-pink-600 hover:via-fuchsia-600 hover:to-orange-500"
-                    >
-                      <Camera className="h-4 w-4" />
-                      Instagramと連携する
-                    </a>
-
-                    <Button type="button" variant="secondary" onClick={closeForm} className="w-full" disabled={submitting}>
-                      キャンセル
-                    </Button>
-                  </div>
+                  <InstagramConnectPanel onCancel={closeForm} />
                 )}
 
                 {platform !== 'instagram' && (<>

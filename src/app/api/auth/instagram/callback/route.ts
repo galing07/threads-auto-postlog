@@ -17,6 +17,7 @@ import crypto from 'crypto'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { encryptSecret, isEncryptionAvailable } from '@/lib/crypto'
+import { fetchInstagramAppCredentials } from '@/lib/ai/api-keys'
 import { exchangeInstagramCode, InstagramAuthError } from '@/lib/platforms/instagram'
 import { instagramRedirectUri } from '../route'
 
@@ -73,11 +74,9 @@ export async function GET(req: NextRequest) {
     return redirectFailure('state_mismatch')
   }
 
-  const clientId = process.env.INSTAGRAM_APP_ID
-  const clientSecret = process.env.INSTAGRAM_APP_SECRET
+  const { appId: clientId, appSecret: clientSecret } = await fetchInstagramAppCredentials()
   if (!clientId || !clientSecret) {
-    console.error('[instagram/callback] INSTAGRAM_APP_ID/SECRET が未設定です')
-    return redirectFailure('server_misconfigured')
+    return redirectFailure('app_not_configured')
   }
   if (!isEncryptionAvailable()) {
     console.error('[instagram/callback] ENCRYPTION_KEY が未設定です')

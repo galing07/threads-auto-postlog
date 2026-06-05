@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { fetchInstagramAppCredentials } from '@/lib/ai/api-keys'
 import { INSTAGRAM_OAUTH_AUTHORIZE_URL, INSTAGRAM_OAUTH_SCOPES } from '@/lib/platforms/instagram'
 
 const INSTAGRAM_OAUTH_STATE_COOKIE = 'instagram_oauth_state'
@@ -45,10 +46,10 @@ export async function GET() {
     return NextResponse.redirect(new URL('/login', appUrl()))
   }
 
-  const clientId = process.env.INSTAGRAM_APP_ID
+  // アプリID/シークレットは環境変数ではなくユーザーごとにアプリ内で保存（設定画面/連携パネル）
+  const { appId: clientId } = await fetchInstagramAppCredentials()
   if (!clientId) {
-    console.error('[instagram/oauth] INSTAGRAM_APP_ID が未設定です')
-    return redirectToAccounts('server_misconfigured')
+    return redirectToAccounts('app_not_configured')
   }
 
   const state = crypto.randomBytes(24).toString('hex')

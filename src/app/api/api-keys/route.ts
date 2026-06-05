@@ -15,6 +15,8 @@ interface ResponseShape {
   has_openai: boolean
   has_elevenlabs: boolean
   has_heygen: boolean
+  instagram_app_id: string | null
+  has_instagram_app: boolean
   updated_at: string | null
 }
 
@@ -28,6 +30,8 @@ function emptyResponse(): ResponseShape {
     has_openai: false,
     has_elevenlabs: false,
     has_heygen: false,
+    instagram_app_id: null,
+    has_instagram_app: false,
     updated_at: null,
   }
 }
@@ -38,11 +42,16 @@ function toResponse(
   elevenlabsStored: string | null,
   heygenStored: string | null,
   updatedAt: string | null,
+  igAppIdStored: string | null = null,
+  igAppSecretStored: string | null = null,
 ): ResponseShape {
   const or = decryptSecret(openrouterStored)
   const oa = decryptSecret(openaiStored)
   const el = decryptSecret(elevenlabsStored)
   const hg = decryptSecret(heygenStored)
+  // アプリ ID は機密性が低いので確認用に返す。シークレットは has フラグのみ。
+  const igId = decryptSecret(igAppIdStored)?.trim() || null
+  const igSecret = decryptSecret(igAppSecretStored)?.trim() || null
   return {
     openrouter_masked: maskApiKey(or),
     openai_masked: maskApiKey(oa),
@@ -52,6 +61,8 @@ function toResponse(
     has_openai: !!oa,
     has_elevenlabs: !!el,
     has_heygen: !!hg,
+    instagram_app_id: igId,
+    has_instagram_app: !!igId && !!igSecret,
     updated_at: updatedAt,
   }
 }
@@ -64,7 +75,7 @@ export async function GET() {
 
     const { data } = await supabase
       .from('user_api_keys')
-      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key, updated_at')
+      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key, instagram_app_id, instagram_app_secret, updated_at')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -76,6 +87,8 @@ export async function GET() {
         data.elevenlabs_key,
         data.heygen_key,
         data.updated_at ?? null,
+        (data as { instagram_app_id?: string | null }).instagram_app_id ?? null,
+        (data as { instagram_app_secret?: string | null }).instagram_app_secret ?? null,
       ),
     )
   } catch (e) {
@@ -128,17 +141,21 @@ export async function PUT(req: NextRequest) {
       openaiKey?: unknown
       elevenlabsKey?: unknown
       heygenKey?: unknown
+      instagramAppId?: unknown
+      instagramAppSecret?: unknown
     }
 
     const orVal = normalize(body.openrouterKey)
     const oaVal = normalize(body.openaiKey)
     const elVal = normalize(body.elevenlabsKey)
     const hgVal = normalize(body.heygenKey)
+    const igIdVal = normalize(body.instagramAppId)
+    const igSecVal = normalize(body.instagramAppSecret)
 
     // 既存行の有無で insert / update を分岐（部分更新でアトミック性を保つ）
     const { data: existing } = await supabase
       .from('user_api_keys')
-      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key')
+      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key, instagram_app_id, instagram_app_secret')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -151,6 +168,8 @@ export async function PUT(req: NextRequest) {
         openai_key: oaVal === KEEP ? null : oaVal,
         elevenlabs_key: elVal === KEEP ? null : elVal,
         heygen_key: hgVal === KEEP ? null : hgVal,
+        instagram_app_id: igIdVal === KEEP ? null : igIdVal,
+        instagram_app_secret: igSecVal === KEEP ? null : igSecVal,
         updated_at: nowIso,
       })
       if (error) throw error
@@ -161,6 +180,8 @@ export async function PUT(req: NextRequest) {
           elVal === KEEP ? null : elVal,
           hgVal === KEEP ? null : hgVal,
           nowIso,
+          igIdVal === KEEP ? null : igIdVal,
+          igSecVal === KEEP ? null : igSecVal,
         ),
       )
     }
@@ -170,6 +191,8 @@ export async function PUT(req: NextRequest) {
     if (oaVal !== KEEP) updates.openai_key = oaVal
     if (elVal !== KEEP) updates.elevenlabs_key = elVal
     if (hgVal !== KEEP) updates.heygen_key = hgVal
+    if (igIdVal !== KEEP) updates.instagram_app_id = igIdVal
+    if (igSecVal !== KEEP) updates.instagram_app_secret = igSecVal
 
     const { error } = await supabase
       .from('user_api_keys')
@@ -181,7 +204,9 @@ export async function PUT(req: NextRequest) {
     const finalOa = oaVal === KEEP ? existing.openai_key : oaVal
     const finalEl = elVal === KEEP ? (existing as { elevenlabs_key?: string | null }).elevenlabs_key ?? null : elVal
     const finalHg = hgVal === KEEP ? (existing as { heygen_key?: string | null }).heygen_key ?? null : hgVal
-    return NextResponse.json(toResponse(finalOr, finalOa, finalEl, finalHg, nowIso))
+    const finalIgId = igIdVal === KEEP ? (existing as { instagram_app_id?: string | null }).instagram_app_id ?? null : igIdVal
+    const finalIgSec = igSecVal === KEEP ? (existing as { instagram_app_secret?: string | null }).instagram_app_secret ?? null : igSecVal
+    return NextResponse.json(toResponse(finalOr, finalOa, finalEl, finalHg, nowIso, finalIgId, finalIgSec))
   } catch (e) {
     console.error('[api-keys PUT]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: '保存に失敗しました' }, { status: 500 })

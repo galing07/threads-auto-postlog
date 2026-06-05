@@ -67,6 +67,32 @@ export async function requireApiKey(provider: ApiKeyProvider): Promise<string> {
 }
 
 /**
+ * 認証ユーザーの Instagram アプリ資格情報（Business Login 用）を DB から取得。
+ * 環境変数ではなくユーザーごとに保存しているため、納品先クライアントも自分で設定できる。
+ */
+export async function fetchInstagramAppCredentials(): Promise<{ appId: string | null; appSecret: string | null }> {
+  const empty = { appId: null, appSecret: null }
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return empty
+    const { data } = await supabase
+      .from('user_api_keys')
+      .select('instagram_app_id, instagram_app_secret')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!data) return empty
+    return {
+      appId: decryptSecret((data as { instagram_app_id?: string | null }).instagram_app_id ?? null)?.trim() || null,
+      appSecret: decryptSecret((data as { instagram_app_secret?: string | null }).instagram_app_secret ?? null)?.trim() || null,
+    }
+  } catch (e) {
+    console.error('[instagram app creds fetch]', e instanceof Error ? e.message : 'unknown')
+    return empty
+  }
+}
+
+/**
  * 表示用にキーをマスクする (最初4 + 末尾4のみ表示、間は ...)
  */
 export function maskApiKey(key: string | null): string | null {
