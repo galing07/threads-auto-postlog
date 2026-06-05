@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { publishPost } from '@/lib/platforms/publishers'
+import { PublishError } from '@/lib/platforms/errors'
 import type { Account } from '@/types/database'
 
 export async function POST(
@@ -132,9 +133,13 @@ export async function POST(
       message: internalMessage.slice(0, 500),
     })
 
-    // クライアントには固定文言だけ返す（内部エラーメッセージは DB 構造や
-    // OAuth トークンなどが漏れうるため client に渡さない）。詳細は上の console.error
-    // と posts.error_message を所有者のみが RLS 越しに読める。
+    // PublishError（機密を含まない安全な公開エラー）のときだけ、原因が分かる
+    // 具体メッセージ＋コードをクライアントに返す。それ以外は内部情報（DB構造や
+    // OAuthトークン等）の漏洩を防ぐため固定文言。詳細は console.error と
+    // posts.error_message（所有者のみ RLS 越しに閲覧可）に残る。
+    if (e instanceof PublishError) {
+      return NextResponse.json({ error: e.message, code: e.code }, { status: 400 })
+    }
     return NextResponse.json({ error: '投稿に失敗しました' }, { status: 400 })
   }
 }

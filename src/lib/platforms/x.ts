@@ -4,6 +4,7 @@
 // Docs: https://developer.twitter.com/en/docs/authentication/oauth-1-0a
 
 import crypto from 'crypto'
+import { PublishError } from './errors'
 
 const X_API_BASE = 'https://api.twitter.com/2'
 // v1.1 media/upload は 2025-06-09 に廃止済み。v2 へ移行。
@@ -25,11 +26,51 @@ interface XTweetResult {
   text: string
 }
 
-export class XAuthError extends Error {
-  constructor(message = 'X 認証に失敗しました（4キーを確認してください）') {
-    super(message)
+export class XAuthError extends PublishError {
+  constructor(
+    message = 'X認証エラー (HTTP 401): API Key/Secret・Access Token/Secret のいずれかが無効です。Developer Portal の4キーを再確認してください。',
+  ) {
+    super('X_AUTH_401', message)
     this.name = 'XAuthError'
   }
+}
+
+// X API v2 のエラーボディから、機密を含まない説明文だけを取り出す。
+// 形式例: { title, detail, reason, errors:[{message}] }
+function parseXErrorDetail(raw: string): string {
+  try {
+    const j = JSON.parse(raw) as {
+      title?: string
+      detail?: string
+      reason?: string
+      errors?: Array<{ message?: string }>
+    }
+    return (j.detail || j.errors?.[0]?.message || j.title || j.reason || '').toString().slice(0, 200)
+  } catch {
+    return ''
+  }
+}
+
+// HTTP ステータスごとに、原因が分かる安全なエラーを投げる。
+function throwXHttpError(method: string, path: string, status: number, raw: string): never {
+  console.error('[X API]', method, path, status, raw.slice(0, 300))
+  const detail = parseXErrorDetail(raw)
+  if (status === 401) {
+    throw new XAuthError()
+  }
+  if (status === 403) {
+    throw new PublishError(
+      'X_FORBIDDEN_403',
+      `X投稿が拒否されました (HTTP 403)。アプリに「Write（書き込み）」権限が無い、またはトークンが権限変更前のものの可能性が高いです。Developer Portal でアプリ権限を「Read and Write」にしてから Access Token を再生成してください。${detail ? ` / X詳細: ${detail}` : ''}`,
+    )
+  }
+  if (status === 429) {
+    throw new PublishError(
+      'X_RATE_LIMIT_429',
+      'Xのレート制限に達しました (HTTP 429)。しばらく時間をおいてから再投稿してください。',
+    )
+  }
+  throw new PublishError('X_HTTP_' + status, `Xエラー (HTTP ${status})${detail ? `: ${detail}` : ''}`)
 }
 
 // RFC3986 パーセントエンコード
@@ -93,9 +134,7 @@ async function xPost<T>(path: string, cred: XCredentials, body: unknown): Promis
   })
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
-    console.error('[X API]', 'POST', path, res.status, errText)
-    if (res.status === 401 || res.status === 403) throw new XAuthError()
-    throw new Error(`X API error (HTTP ${res.status})`)
+    throwXHttpError('POST', path, res.status, errText)
   }
   return res.json() as Promise<T>
 }
@@ -109,9 +148,7 @@ async function xGet<T>(path: string, cred: XCredentials): Promise<T> {
   })
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
-    console.error('[X API]', 'GET', path, res.status, errText)
-    if (res.status === 401 || res.status === 403) throw new XAuthError()
-    throw new Error(`X API error (HTTP ${res.status})`)
+    throwXHttpError('GET', path, res.status, errText)
   }
   return res.json() as Promise<T>
 }
@@ -141,9 +178,7 @@ export async function uploadXMedia(
 
   const raw = await res.text().catch(() => '')
   if (!res.ok) {
-    console.error('[X API]', 'POST', '/2/media/upload', res.status, raw.slice(0, 300))
-    if (res.status === 401 || res.status === 403) throw new XAuthError()
-    throw new Error(`X media upload error (HTTP ${res.status})`)
+    throwXHttpError('POST', '/2/media/upload', res.status, raw)
   }
 
   // HTTP 200 でも data 不在 / errors を返す場合があるため明示的に検査
@@ -160,7 +195,7 @@ export async function uploadXMedia(
   } catch {
     console.error('[X API]', '/2/media/upload non-JSON response', raw.slice(0, 200))
   }
-  if (!mediaId) throw new Error('X メディアアップロードに失敗しました（media_id 取得不可）')
+  if (!mediaId) throw new PublishError('X_MEDIA_UPLOAD', 'X画像アップロードに失敗しました（media_id を取得できませんでした）')
   return mediaId
 }
 

@@ -15,6 +15,7 @@ import {
   refreshInstagramAccessToken,
 } from './instagram'
 import { createXTweet, createXThread, uploadXMedia, XAuthError, type XCredentials } from './x'
+import { PublishError } from './errors'
 import {
   refreshYouTubeToken,
   uploadYouTubeVideo,
@@ -49,7 +50,7 @@ const threadsPublisher: Publisher = {
   platform: 'threads',
   validate({ account }) {
     if (!account.access_token || !account.threads_user_id) {
-      throw new Error('Threads APIトークンが設定されていません')
+      throw new PublishError('THREADS_NOT_CONFIGURED', 'Threads APIトークンが設定されていません')
     }
   },
   async publish({ post, account }) {
@@ -66,10 +67,10 @@ const instagramPublisher: Publisher = {
   platform: 'instagram',
   validate({ post, account }) {
     if (!account.access_token || !account.instagram_user_id) {
-      throw new Error('Instagram APIトークンまたはアカウントIDが設定されていません')
+      throw new PublishError('IG_NOT_CONFIGURED', 'Instagram APIトークンまたはアカウントIDが設定されていません')
     }
     if (!post.image_url) {
-      throw new Error('Instagram投稿には画像が必須です')
+      throw new PublishError('IG_IMAGE_REQUIRED', 'Instagram投稿には画像が必須です')
     }
   },
   async publish({ post, account }) {
@@ -142,7 +143,7 @@ const xPublisher: Publisher = {
   platform: 'x',
   validate({ account }) {
     if (!account.x_api_key || !account.x_api_secret || !account.access_token || !account.x_access_secret) {
-      throw new Error('X の4キー（API Key/Secret・Access Token/Secret）が設定されていません')
+      throw new PublishError('X_NOT_CONFIGURED', 'X の4キー（API Key/Secret・Access Token/Secret）が設定されていません')
     }
   },
   async publish({ post, account }) {
@@ -263,7 +264,7 @@ export async function publishPost(ctx: PublishContext): Promise<PublishResult> {
   const dctx: PublishContext = { ...ctx, account }
   const publisher = publishers[account.platform]
   if (!publisher) {
-    throw new Error(`${account.platform} の投稿は未対応です`)
+    throw new PublishError('PLATFORM_UNSUPPORTED', `${account.platform} の投稿は未対応です`)
   }
   publisher.validate(dctx)
 
@@ -274,7 +275,10 @@ export async function publishPost(ctx: PublishContext): Promise<PublishResult> {
 
     const refreshed = await tryRefreshToken(dctx.account)
     if (!refreshed) {
-      throw new Error('アクセストークンの有効期限が切れています。再連携が必要です')
+      // 元エラーが既に安全な公開エラー（例: X の XAuthError）なら、正確な原因を
+      // 残すためそのまま再送出する。それ以外は汎用の期限切れ案内にフォールバック。
+      if (e instanceof PublishError) throw e
+      throw new PublishError('TOKEN_EXPIRED', 'アクセストークンの有効期限が切れています。再連携が必要です')
     }
     // 更新後の credentials で 1 回だけ再試行
     return publisher.publish(dctx)
