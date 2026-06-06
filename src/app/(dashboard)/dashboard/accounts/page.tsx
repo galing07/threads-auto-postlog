@@ -200,10 +200,10 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Instagram アプリ設定（初回のみ）</p>
           <p className="text-[11px] leading-relaxed text-gray-500">
-            Metaアプリの「Instagram → ビジネスログインの設定」にある アプリID / アプリシークレット を入力してください。暗号化して保存され、本人のみアクセスできます。
+            ⚠️ Facebookアプリの「基本設定」にあるアプリIDではありません。Metaアプリ →「Instagram」→「APIセットアップ（Instagramログイン用）」の画面にある<strong>Instagram専用のアプリID / アプリシークレット</strong>を入力してください（FacebookのアプリIDを入れると「Invalid platform app」エラーになります）。暗号化して保存され、本人のみアクセスできます。
           </p>
           <div>
-            <FieldLabel>Instagram アプリ ID</FieldLabel>
+            <FieldLabel>Instagram アプリ ID（Instagram専用・FacebookアプリIDではない）</FieldLabel>
             <Input value={appId} onChange={e => setAppId(e.target.value)} placeholder="例：1234567890123456" />
           </div>
           <div>
