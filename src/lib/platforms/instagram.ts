@@ -9,7 +9,9 @@ const IG_API_BASE = 'https://graph.instagram.com/v23.0'
 const REQUEST_TIMEOUT_MS = 30_000
 
 // ---- Business Login for Instagram (OAuth) ----
-export const INSTAGRAM_OAUTH_AUTHORIZE_URL = 'https://www.instagram.com/oauth/authorize'
+// 認可エンドポイントは api.instagram.com（www.instagram.com 側は旧 Basic Display 用で、
+// 新しい Instagram ログイン方式のアプリIDだと "Invalid platform app" になる）。
+export const INSTAGRAM_OAUTH_AUTHORIZE_URL = 'https://api.instagram.com/oauth/authorize'
 const INSTAGRAM_OAUTH_TOKEN_URL = 'https://api.instagram.com/oauth/access_token'
 const INSTAGRAM_LONGLIVED_URL = 'https://graph.instagram.com/access_token'
 /** 投稿に必要な最小スコープ（基本情報＋コンテンツ公開） */
