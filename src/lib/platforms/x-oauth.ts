@@ -17,7 +17,12 @@
 import 'server-only'
 import crypto from 'crypto'
 
-export const X_OAUTH_AUTHORIZE_URL = 'https://twitter.com/i/oauth2/authorize'
+// 認可URLは x.com を使う。X はドメインを twitter.com → x.com へ移行済みで、ユーザーの
+// ログインセッション cookie は x.com 側にある。twitter.com/i/oauth2/authorize を使うと
+// セッションを認識できず「Xにログインしてください」が無限ループする（ログインしても進まない）。
+// x.com 側ならファーストパーティ session cookie が読めるためログイン済みなら即認可画面に進む。
+export const X_OAUTH_AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize'
+// トークン交換は server-to-server（ブラウザセッション非依存）。api.twitter.com は現行も有効。
 const X_OAUTH_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token'
 const REQUEST_TIMEOUT_MS = 30_000
 
