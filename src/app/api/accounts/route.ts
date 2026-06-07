@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { fetchInstagramUserId } from '@/lib/platforms/instagram'
-import { getXMe } from '@/lib/platforms/x'
+import { getXMe, isXWritable } from '@/lib/platforms/x'
 import { encryptSecret } from '@/lib/crypto'
 
 /** null を保ったまま暗号化する小ヘルパー（空値は暗号化しない） */
@@ -207,22 +207,39 @@ export async function POST(req: NextRequest) {
         )
       }
       xUserId = sanitizeStr(body.xUserId, MAX_USER_ID)
-      if (!xUserId) {
-        try {
-          const me = await getXMe({
-            apiKey: xApiKey,
-            apiSecret: xApiSecret,
-            accessToken: accessTokenRaw,
-            accessSecret: xAccessSecret,
-          })
-          xUserId = me.id
-        } catch (e) {
-          console.error('[accounts POST x/users/me]', e instanceof Error ? e.message : 'unknown')
-          return NextResponse.json(
-            { error: 'X の4キーが無効です。Developer Portal の値と、App permissions が「Read and write」かを確認してください' },
-            { status: 400 },
-          )
-        }
+      // xUserId 指定の有無に関わらず /users/me を必ず叩く。理由は2つ:
+      //   1) 4キーの有効性検証（無効なら 401 で弾く）
+      //   2) x-access-level ヘッダでトークンの実効権限を確認し、
+      //      「読み取り専用」トークンを"追加時点"で弾く（保存後に投稿で 403 になる罠を防ぐ）
+      let xAccessLevel: string | null = null
+      try {
+        const me = await getXMe({
+          apiKey: xApiKey,
+          apiSecret: xApiSecret,
+          accessToken: accessTokenRaw,
+          accessSecret: xAccessSecret,
+        })
+        if (!xUserId) xUserId = me.id
+        xAccessLevel = me.accessLevel
+      } catch (e) {
+        console.error('[accounts POST x/users/me]', e instanceof Error ? e.message : 'unknown')
+        return NextResponse.json(
+          { error: 'X の4キーが無効です。Developer Portal の値と、App permissions が「Read and write」かを確認してください' },
+          { status: 400 },
+        )
+      }
+      if (!isXWritable(xAccessLevel)) {
+        return NextResponse.json(
+          {
+            error:
+              'このアクセストークンは「読み取り専用（Read only）」です。投稿できません。\n' +
+              'X Developer Portal → User authentication settings でアプリ権限を「Read and write」に変更して【保存】し、' +
+              'その後に「Keys and tokens」で Access Token と Secret を必ず【再生成】してください。' +
+              '（権限変更前に作ったトークンは再生成するまで読み取り専用のままです）\n' +
+              '再生成した新しい4キーで登録し直すと投稿できるようになります。',
+          },
+          { status: 400 },
+        )
       }
     }
 

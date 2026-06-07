@@ -139,7 +139,10 @@ async function xPost<T>(path: string, cred: XCredentials, body: unknown): Promis
   return res.json() as Promise<T>
 }
 
-async function xGet<T>(path: string, cred: XCredentials): Promise<T> {
+async function xGet<T>(
+  path: string,
+  cred: XCredentials,
+): Promise<{ data: T; accessLevel: string | null }> {
   const url = `${X_API_BASE}${path}`
   const res = await fetch(url, {
     method: 'GET',
@@ -150,7 +153,11 @@ async function xGet<T>(path: string, cred: XCredentials): Promise<T> {
     const errText = await res.text().catch(() => '')
     throwXHttpError('GET', path, res.status, errText)
   }
-  return res.json() as Promise<T>
+  // x-access-level: トークンの実効権限を表す。read / read-write / read-write-directmessages。
+  // 認証付き読み取りリクエストでも返るため、投稿を試す前に「読み取り専用」を検知できる。
+  // Docs: https://developer.twitter.com/en/docs/apps/app-permissions
+  const accessLevel = res.headers.get('x-access-level')
+  return { data: (await res.json()) as T, accessLevel }
 }
 
 /**
@@ -228,10 +235,17 @@ export async function createXThread(
 
 export async function getXMe(
   cred: XCredentials,
-): Promise<{ id: string; username: string; name: string }> {
-  const result = await xGet<{ data: { id: string; username: string; name: string } }>(
+): Promise<{ id: string; username: string; name: string; accessLevel: string | null }> {
+  const { data: body, accessLevel } = await xGet<{ data: { id: string; username: string; name: string } }>(
     '/users/me',
     cred,
   )
-  return result.data
+  return { ...body.data, accessLevel }
+}
+
+/** x-access-level が書き込み可能（read-write 系）かどうか。read のとき false。 */
+export function isXWritable(accessLevel: string | null): boolean {
+  // ヘッダ未取得(null)時は誤ブロックを避けて投稿を許可（フェイルオープン）。
+  // 明示的に "read" のときだけ読み取り専用と判定する。
+  return accessLevel !== 'read'
 }
