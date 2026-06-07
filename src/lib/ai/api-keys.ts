@@ -1,5 +1,6 @@
 import 'server-only'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { decryptSecret } from '@/lib/crypto'
 
 export type ApiKeyProvider = 'openrouter' | 'openai'
@@ -88,6 +89,61 @@ export async function fetchInstagramAppCredentials(): Promise<{ appId: string | 
     }
   } catch (e) {
     console.error('[instagram app creds fetch]', e instanceof Error ? e.message : 'unknown')
+    return empty
+  }
+}
+
+export interface XOAuthCredentials {
+  clientId: string | null
+  clientSecret: string | null
+}
+
+/**
+ * 認証ユーザーの X OAuth 2.0 アプリ資格情報（Client ID / Secret）を DB から取得。
+ * 環境変数ではなくユーザーごとにアプリ内で保存（Instagram の BYOK と同じ運用）。
+ */
+export async function fetchXOAuthCredentials(): Promise<XOAuthCredentials> {
+  const empty: XOAuthCredentials = { clientId: null, clientSecret: null }
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return empty
+    const { data } = await supabase
+      .from('user_api_keys')
+      .select('x_oauth_client_id, x_oauth_client_secret')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!data) return empty
+    return {
+      clientId: decryptSecret((data as { x_oauth_client_id?: string | null }).x_oauth_client_id ?? null)?.trim() || null,
+      clientSecret: decryptSecret((data as { x_oauth_client_secret?: string | null }).x_oauth_client_secret ?? null)?.trim() || null,
+    }
+  } catch (e) {
+    console.error('[x oauth creds fetch]', e instanceof Error ? e.message : 'unknown')
+    return empty
+  }
+}
+
+/**
+ * 指定ユーザーの X OAuth 資格情報を service role で取得（セッション非依存）。
+ * publish 時のトークン refresh のように account.user_id 起点で引く用途に使う。
+ */
+export async function fetchXOAuthCredentialsByUserId(userId: string): Promise<XOAuthCredentials> {
+  const empty: XOAuthCredentials = { clientId: null, clientSecret: null }
+  try {
+    const admin = createAdminClient()
+    const { data } = await admin
+      .from('user_api_keys')
+      .select('x_oauth_client_id, x_oauth_client_secret')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!data) return empty
+    return {
+      clientId: decryptSecret((data as { x_oauth_client_id?: string | null }).x_oauth_client_id ?? null)?.trim() || null,
+      clientSecret: decryptSecret((data as { x_oauth_client_secret?: string | null }).x_oauth_client_secret ?? null)?.trim() || null,
+    }
+  } catch (e) {
+    console.error('[x oauth creds fetch byuser]', e instanceof Error ? e.message : 'unknown')
     return empty
   }
 }

@@ -17,6 +17,8 @@ interface ResponseShape {
   has_heygen: boolean
   instagram_app_id: string | null
   has_instagram_app: boolean
+  x_oauth_client_id: string | null
+  has_x_oauth: boolean
   updated_at: string | null
 }
 
@@ -32,6 +34,8 @@ function emptyResponse(): ResponseShape {
     has_heygen: false,
     instagram_app_id: null,
     has_instagram_app: false,
+    x_oauth_client_id: null,
+    has_x_oauth: false,
     updated_at: null,
   }
 }
@@ -44,14 +48,18 @@ function toResponse(
   updatedAt: string | null,
   igAppIdStored: string | null = null,
   igAppSecretStored: string | null = null,
+  xClientIdStored: string | null = null,
+  xClientSecretStored: string | null = null,
 ): ResponseShape {
   const or = decryptSecret(openrouterStored)
   const oa = decryptSecret(openaiStored)
   const el = decryptSecret(elevenlabsStored)
   const hg = decryptSecret(heygenStored)
-  // アプリ ID は機密性が低いので確認用に返す。シークレットは has フラグのみ。
+  // アプリ ID / Client ID は機密性が低いので確認用に返す。シークレットは has フラグのみ。
   const igId = decryptSecret(igAppIdStored)?.trim() || null
   const igSecret = decryptSecret(igAppSecretStored)?.trim() || null
+  const xId = decryptSecret(xClientIdStored)?.trim() || null
+  const xSecret = decryptSecret(xClientSecretStored)?.trim() || null
   return {
     openrouter_masked: maskApiKey(or),
     openai_masked: maskApiKey(oa),
@@ -63,6 +71,8 @@ function toResponse(
     has_heygen: !!hg,
     instagram_app_id: igId,
     has_instagram_app: !!igId && !!igSecret,
+    x_oauth_client_id: xId,
+    has_x_oauth: !!xId && !!xSecret,
     updated_at: updatedAt,
   }
 }
@@ -75,7 +85,7 @@ export async function GET() {
 
     const { data } = await supabase
       .from('user_api_keys')
-      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key, instagram_app_id, instagram_app_secret, updated_at')
+      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key, instagram_app_id, instagram_app_secret, x_oauth_client_id, x_oauth_client_secret, updated_at')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -89,6 +99,8 @@ export async function GET() {
         data.updated_at ?? null,
         (data as { instagram_app_id?: string | null }).instagram_app_id ?? null,
         (data as { instagram_app_secret?: string | null }).instagram_app_secret ?? null,
+        (data as { x_oauth_client_id?: string | null }).x_oauth_client_id ?? null,
+        (data as { x_oauth_client_secret?: string | null }).x_oauth_client_secret ?? null,
       ),
     )
   } catch (e) {
@@ -143,6 +155,8 @@ export async function PUT(req: NextRequest) {
       heygenKey?: unknown
       instagramAppId?: unknown
       instagramAppSecret?: unknown
+      xOauthClientId?: unknown
+      xOauthClientSecret?: unknown
     }
 
     const orVal = normalize(body.openrouterKey)
@@ -151,11 +165,13 @@ export async function PUT(req: NextRequest) {
     const hgVal = normalize(body.heygenKey)
     const igIdVal = normalize(body.instagramAppId)
     const igSecVal = normalize(body.instagramAppSecret)
+    const xIdVal = normalize(body.xOauthClientId)
+    const xSecVal = normalize(body.xOauthClientSecret)
 
     // 既存行の有無で insert / update を分岐（部分更新でアトミック性を保つ）
     const { data: existing } = await supabase
       .from('user_api_keys')
-      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key, instagram_app_id, instagram_app_secret')
+      .select('openrouter_key, openai_key, elevenlabs_key, heygen_key, instagram_app_id, instagram_app_secret, x_oauth_client_id, x_oauth_client_secret')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -170,6 +186,8 @@ export async function PUT(req: NextRequest) {
         heygen_key: hgVal === KEEP ? null : hgVal,
         instagram_app_id: igIdVal === KEEP ? null : igIdVal,
         instagram_app_secret: igSecVal === KEEP ? null : igSecVal,
+        x_oauth_client_id: xIdVal === KEEP ? null : xIdVal,
+        x_oauth_client_secret: xSecVal === KEEP ? null : xSecVal,
         updated_at: nowIso,
       })
       if (error) throw error
@@ -182,6 +200,8 @@ export async function PUT(req: NextRequest) {
           nowIso,
           igIdVal === KEEP ? null : igIdVal,
           igSecVal === KEEP ? null : igSecVal,
+          xIdVal === KEEP ? null : xIdVal,
+          xSecVal === KEEP ? null : xSecVal,
         ),
       )
     }
@@ -193,6 +213,8 @@ export async function PUT(req: NextRequest) {
     if (hgVal !== KEEP) updates.heygen_key = hgVal
     if (igIdVal !== KEEP) updates.instagram_app_id = igIdVal
     if (igSecVal !== KEEP) updates.instagram_app_secret = igSecVal
+    if (xIdVal !== KEEP) updates.x_oauth_client_id = xIdVal
+    if (xSecVal !== KEEP) updates.x_oauth_client_secret = xSecVal
 
     const { error } = await supabase
       .from('user_api_keys')
@@ -206,7 +228,9 @@ export async function PUT(req: NextRequest) {
     const finalHg = hgVal === KEEP ? (existing as { heygen_key?: string | null }).heygen_key ?? null : hgVal
     const finalIgId = igIdVal === KEEP ? (existing as { instagram_app_id?: string | null }).instagram_app_id ?? null : igIdVal
     const finalIgSec = igSecVal === KEEP ? (existing as { instagram_app_secret?: string | null }).instagram_app_secret ?? null : igSecVal
-    return NextResponse.json(toResponse(finalOr, finalOa, finalEl, finalHg, nowIso, finalIgId, finalIgSec))
+    const finalXId = xIdVal === KEEP ? (existing as { x_oauth_client_id?: string | null }).x_oauth_client_id ?? null : xIdVal
+    const finalXSec = xSecVal === KEEP ? (existing as { x_oauth_client_secret?: string | null }).x_oauth_client_secret ?? null : xSecVal
+    return NextResponse.json(toResponse(finalOr, finalOa, finalEl, finalHg, nowIso, finalIgId, finalIgSec, finalXId, finalXSec))
   } catch (e) {
     console.error('[api-keys PUT]', e instanceof Error ? e.message : 'unknown')
     return NextResponse.json({ error: '保存に失敗しました' }, { status: 500 })

@@ -16,6 +16,7 @@ import {
 } from './instagram'
 import { createXTweet, createXThread, uploadXMedia, XAuthError, type XAuth, type XCredentials } from './x'
 import { refreshXToken } from './x-oauth'
+import { fetchXOAuthCredentialsByUserId } from '@/lib/ai/api-keys'
 import { PublishError } from './errors'
 import {
   refreshYouTubeToken,
@@ -288,10 +289,10 @@ async function tryRefreshToken(account: Account): Promise<boolean> {
   if (account.platform === 'x') {
     // OAuth2 連携（x_refresh_token あり）のみ refresh 可能。手動4キーは更新不可（再連携が必要）。
     if (!account.x_refresh_token) return false
-    const clientId = process.env.X_OAUTH_CLIENT_ID
-    const clientSecret = process.env.X_OAUTH_CLIENT_SECRET
+    // Client ID / Secret はユーザーごとに DB 保存（BYOK）。account 所有者基準で取得する。
+    const { clientId, clientSecret } = await fetchXOAuthCredentialsByUserId(account.user_id)
     if (!clientId || !clientSecret) {
-      console.error('[publishers] X_OAUTH_CLIENT_ID/SECRET が未設定です')
+      console.error('[publishers] X OAuth Client ID/Secret 未設定（設定ページで登録が必要）')
       return false
     }
     if (!isEncryptionAvailable()) {

@@ -15,8 +15,10 @@ import crypto from 'crypto'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { encryptSecret, isEncryptionAvailable } from '@/lib/crypto'
+import { fetchXOAuthCredentials } from '@/lib/ai/api-keys'
 import { exchangeXCode, XOAuthError } from '@/lib/platforms/x-oauth'
 import { getXMe } from '@/lib/platforms/x'
+import { xRedirectUri } from '../route'
 
 const X_OAUTH_STATE_COOKIE = 'x_oauth_state'
 const X_OAUTH_VERIFIER_COOKIE = 'x_oauth_verifier'
@@ -74,12 +76,10 @@ export async function GET(req: NextRequest) {
     return redirectFailure('state_mismatch')
   }
 
-  const clientId = process.env.X_OAUTH_CLIENT_ID
-  const clientSecret = process.env.X_OAUTH_CLIENT_SECRET
-  const redirectUri = process.env.X_OAUTH_REDIRECT_URI
-  if (!clientId || !clientSecret || !redirectUri) {
-    console.error('[x/callback] X_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI が未設定です')
-    return redirectFailure('server_misconfigured')
+  // Client ID / Secret は環境変数ではなくユーザーごとに DB 保存（BYOK）。
+  const { clientId, clientSecret } = await fetchXOAuthCredentials()
+  if (!clientId || !clientSecret) {
+    return redirectFailure('app_not_configured')
   }
   if (!isEncryptionAvailable()) {
     console.error('[x/callback] ENCRYPTION_KEY が未設定です')
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
   // code → access_token / refresh_token 交換（PKCE）
   let tokens
   try {
-    tokens = await exchangeXCode(clientId, clientSecret, code, redirectUri, verifier)
+    tokens = await exchangeXCode(clientId, clientSecret, code, xRedirectUri(), verifier)
   } catch (e) {
     console.error('[x/callback] exchange failed', e instanceof XOAuthError ? e.message : 'unknown')
     return redirectFailure('token_exchange_failed')

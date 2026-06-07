@@ -346,45 +346,191 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
   )
 }
 
-// X は OAuth 2.0 (PKCE) でつなぐ。ボタンを押すと X の認可画面へ飛び、許可するだけで連携完了。
-// 4キーの手動貼り付けは「手動で4キー」リンクからのフォールバックとして残す。
+// X は OAuth 2.0 (PKCE) でつなぐ。Client ID / Secret は環境変数ではなくアプリ内で入力し
+// user_api_keys に暗号化保存（Instagram と同じ BYOK）。1つのアプリ設定で複数アカウントを
+// 「連携ボタン」連打で追加できる（旧4キーはアカウント毎に発行が必要だった）。
 function XConnectPanel({ onManual, onCancel }: { onManual: () => void; onCancel: () => void }) {
+  const toast = useToast()
+  const [loading, setLoading] = useState(true)
+  const [configured, setConfigured] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [clientId, setClientId] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+  const [savedClientId, setSavedClientId] = useState<string | null>(null)
+  const [showSecret, setShowSecret] = useState(false)
+  const [saving, setSaving] = useState(false)
+  // X に登録すべき Callback URI の実値（実フローが送るのと同一）。ガイドのハードコード排除。
+  const [redirectUri, setRedirectUri] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/api-keys')
+      .then(r => r.json())
+      .then((d: { has_x_oauth?: boolean; x_oauth_client_id?: string | null }) => {
+        setConfigured(!!d.has_x_oauth)
+        setSavedClientId(d.x_oauth_client_id ?? null)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+    fetch('/api/auth/x/config')
+      .then(r => r.json())
+      .then((d: { redirectUri?: string }) => setRedirectUri(d.redirectUri ?? null))
+      .catch(() => {})
+  }, [])
+
+  async function copyRedirectUri() {
+    if (!redirectUri) return
+    try {
+      await navigator.clipboard.writeText(redirectUri)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error('コピーに失敗しました。手動で選択してコピーしてください')
+    }
+  }
+
+  function goConnect() {
+    openOAuthInNewTab('/api/auth/x')
+  }
+
+  async function saveAndConnect() {
+    if (!clientId.trim() || !clientSecret.trim()) {
+      toast.error('Client ID と Client Secret を両方入力してください')
+      return
+    }
+    // ポップアップブロッカー回避: 保存(await)前にユーザージェスチャ内で空タブを開いておく
+    const authTab = window.open('about:blank', '_blank')
+    setSaving(true)
+    try {
+      const res = await fetch('/api/api-keys', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ xOauthClientId: clientId.trim(), xOauthClientSecret: clientSecret.trim() }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(d.error ?? '保存に失敗しました')
+      }
+      if (authTab && !authTab.closed) {
+        authTab.location.href = '/api/auth/x'
+        try { authTab.opener = null } catch { /* 遷移済み等は無視 */ }
+      } else {
+        window.location.href = '/api/auth/x'
+      }
+      setSaving(false)
+    } catch (e) {
+      if (authTab && !authTab.closed) authTab.close()
+      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
+      setSaving(false)
+    }
+  }
+
+  const showForm = !loading && (!configured || editing)
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
         <p className="text-sm font-semibold text-gray-800">Xと連携</p>
         <p className="mt-1 text-xs leading-relaxed text-gray-600">
           ボタンを押すと<strong>別タブ</strong>でXの認可画面が開きます。投稿したいアカウントでログインして「アプリを許可」するだけで連携完了です（API Key などの貼り付けは不要。完了後この画面に戻ると一覧に反映されます）。
+          <br />1つのXアプリ設定で、複数アカウントも連携ボタンを押すだけで追加できます。
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={() => openOAuthInNewTab('/api/auth/x')}
-        className="flex w-full items-center justify-center gap-2 rounded-md bg-black px-4 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-gray-800"
-      >
-        <XBrandIcon className="h-4 w-4 text-white" />
-        Xと連携する
-      </button>
+      {showForm && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">X アプリ設定（初回のみ）</p>
+          <p className="text-[11px] leading-relaxed text-gray-500">
+            X Developer Portal でアプリの「User authentication settings」を <strong>OAuth 2.0 / Web App（Confidential client）</strong>で有効化し、発行される <strong>OAuth 2.0 の Client ID / Client Secret</strong> を入力してください（API Key の4キーとは別物です）。暗号化して保存され、本人のみアクセスできます。
+          </p>
 
-      <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
-        <p className="text-[11px] leading-relaxed text-amber-800">
-          ⚠️ 初回のみ管理者設定が必要です。X Developer Portal でアプリの「User authentication settings」を
-          OAuth 2.0（Web App / Confidential client）で有効化し、Callback URI に
-          <code className="mx-1 break-all rounded bg-white px-1 py-0.5 font-mono text-[10px] ring-1 ring-amber-200">
-            https://threads-auto-post-umber.vercel.app/api/auth/x/callback
-          </code>
-          を登録、Client ID / Secret を環境変数（X_OAUTH_CLIENT_ID / X_OAUTH_CLIENT_SECRET / X_OAUTH_REDIRECT_URI）に設定してください。
-        </p>
-      </div>
+          {redirectUri && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
+              <p className="text-[11px] font-medium text-amber-800">
+                X の「User authentication settings」→ Callback URI に、以下を<strong>完全一致</strong>で登録してください：
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="flex-1 break-all rounded bg-white px-2 py-1.5 font-mono text-[11px] text-gray-800 ring-1 ring-amber-200">
+                  {redirectUri}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyRedirectUri}
+                  aria-label="Callback URI をコピー"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-amber-700 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                >
+                  {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <FieldLabel>Client ID（OAuth 2.0）</FieldLabel>
+            <Input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="OAuth 2.0 Client ID" />
+          </div>
+          <div>
+            <FieldLabel>Client Secret（OAuth 2.0）</FieldLabel>
+            <div className="relative">
+              <Input
+                type={showSecret ? 'text' : 'password'}
+                value={clientSecret}
+                onChange={e => setClientSecret(e.target.value)}
+                placeholder="OAuth 2.0 Client Secret"
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <Button
+            type="button"
+            onClick={saveAndConnect}
+            disabled={saving}
+            isLoading={saving}
+            loadingText="保存中..."
+            className="flex w-full items-center justify-center gap-2 bg-black hover:bg-gray-800"
+          >
+            <XBrandIcon className="h-4 w-4 text-white" />
+            保存してXと連携する
+          </Button>
+        </div>
+      )}
+
+      {!loading && configured && !editing && (
+        <>
+          <button
+            type="button"
+            onClick={goConnect}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-black px-4 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-gray-800"
+          >
+            <XBrandIcon className="h-4 w-4 text-white" />
+            Xと連携する
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="w-full text-center text-[11px] text-gray-400 hover:text-gray-600"
+          >
+            アプリ設定を変更{savedClientId ? `（現在: ${savedClientId}）` : ''}
+          </button>
+        </>
+      )}
 
       <button
         type="button"
         onClick={onManual}
         className="w-full text-center text-[11px] text-gray-400 hover:text-gray-600"
       >
-        うまくいかない場合：手動で4キーを貼って追加（旧方式）
+        旧方式：手動で4キー（API Key 等）を貼って追加
       </button>
+
+      <SetupGuide key="x-oauth" platform="x" defaultOpen={false} />
 
       <Button type="button" variant="secondary" onClick={onCancel} className="w-full">
         キャンセル
@@ -582,8 +728,8 @@ export default function AccountsPage() {
       toast.success(`${(plat && labelMap[plat]) || plat || ''}と連携しました`)
     } else if (error) {
       const map: Record<string, string> = {
-        app_not_configured: 'Instagram アプリ ID / シークレットが未設定です。連携パネルで入力してください',
-        server_misconfigured: '連携の設定が不足しています（X_OAUTH_* / ENCRYPTION_KEY などの環境変数を確認してください）',
+        app_not_configured: 'アプリの連携設定（ID / シークレット）が未入力です。連携パネルで入力して保存してください',
+        server_misconfigured: 'サーバー側の設定が不足しています（暗号化キー未設定など。管理者にお問い合わせください）',
         token_exchange_failed: '連携に失敗しました。もう一度お試しください',
         userinfo_failed: 'ユーザー情報の取得に失敗しました。もう一度お試しください',
         missing_params: '連携に必要な情報が不足しています。もう一度お試しください',
