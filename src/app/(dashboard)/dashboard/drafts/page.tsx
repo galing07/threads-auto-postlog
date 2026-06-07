@@ -22,6 +22,13 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   failed:     { label: 'エラー',   cls: 'bg-red-50 text-red-600' },
 }
 
+// 投稿先プラットフォームのバッジ（どのSNSに投稿するか/したかを一目で分かるように）
+const PLATFORM_BADGE: Record<string, { label: string; cls: string }> = {
+  threads:   { label: 'Threads',   cls: 'bg-gray-900 text-white' },
+  instagram: { label: 'Instagram', cls: 'bg-gradient-to-r from-pink-500 to-orange-400 text-white' },
+  x:         { label: 'X',         cls: 'bg-black text-white' },
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('ja-JP', {
     month: 'numeric', day: 'numeric',
@@ -64,6 +71,9 @@ function DraftCard({
   const [pickerAccountId, setPickerAccountId] = useState<string>('')
 
   const { label, cls } = STATUS_CONFIG[post.status] ?? STATUS_CONFIG.draft
+  // 投稿先アカウント（account_id → accounts から解決）。下書き=「ここに投稿する」、投稿済み=「ここに投稿した」。
+  const account = post.account_id ? accounts.find(a => a.id === post.account_id) : undefined
+  const pb = account ? PLATFORM_BADGE[account.platform] : undefined
   const text = post.text_content ?? ''
   const isLong = text.length > 120
   const displayText = isLong && !expanded ? text.slice(0, 120) + '…' : text
@@ -132,6 +142,20 @@ function DraftCard({
             <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium', cls)}>
               {label}
             </span>
+            {/* 投稿先（どのSNS・どのアカウントに投稿する/したか）を明示 */}
+            {account && pb ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-gray-600">
+                <span className="text-gray-400">{post.status === 'posted' ? '投稿先' : '→'}</span>
+                <span className={cx('inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold', pb.cls)}>
+                  {pb.label}
+                </span>
+                <span className="max-w-[150px] truncate font-medium text-gray-700">{account.name}</span>
+              </span>
+            ) : (post.status === 'draft' || post.status === 'failed') ? (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
+                <User className="h-3 w-3" />投稿先未選択
+              </span>
+            ) : null}
             {post.theme && (
               <span className="truncate text-[11px] text-gray-500">#{post.theme}</span>
             )}
@@ -224,18 +248,6 @@ function DraftCard({
               )}
             </div>
           </div>
-
-          {post.account_id ? (
-            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-gray-300">
-              <User className="h-3 w-3" />
-              アカウントあり
-            </div>
-          ) : (
-            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-amber-500">
-              <User className="h-3 w-3" />
-              アカウント未割当（投稿時に選択してください）
-            </div>
-          )}
         </div>
       </div>
     </Card>
