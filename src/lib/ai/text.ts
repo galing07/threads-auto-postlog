@@ -240,9 +240,16 @@ ${recentSummaries.length > 0 ? '\n※ 過去投稿と切り口・主張・構成
   "summary": "この投稿の内容を30〜50字で要約（次回の被り防止用）"
 }`
 
-  // 出力サイズの目安: 日本語は1字で複数トークンになりやすいので係数 3.5、
-  // summary + JSON 装飾分も加算。上限 8000 にクランプ（Instagram 長文での途中破断防止）
-  const maxOutputTokens = Math.min(Math.ceil(effectiveMaxLength * 3.5) + 400, 8000)
+  // 出力トークン上限の見積り。
+  // 基準は effectiveMaxLength（soft target）ではなくプラットフォームの「ハード上限字数」。
+  // soft target で見積もると、モデルが許容上限近くまで書いたとき max_tokens を超えて
+  // JSON が途中で切れる。特に Instagram は最大2200字許容なので 1500字基準では不足し、
+  // 「途中破断 → JSON パース失敗」が発生していた。
+  // 係数 3.5: 日本語は1字で複数トークンになりやすい。summary + JSON 装飾分も加算。
+  // さらに gemini-3.5-flash は reasoning モデルで、effort:'low' でも思考トークンが
+  // max_tokens を消費するため、ハード上限基準で余裕を確保する。上限 8000 にクランプ。
+  const hardCharCap = isInstagram ? 2200 : isX ? 280 : effectiveMaxLength
+  const maxOutputTokens = Math.min(Math.ceil(hardCharCap * 3.5) + 400, 8000)
 
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -273,12 +280,17 @@ ${recentSummaries.length > 0 ? '\n※ 過去投稿と切り口・主張・構成
   }
 
   const json = await res.json() as {
-    choices: Array<{ message: { content: string } }>
+    choices: Array<{ message: { content: string }; finish_reason?: string }>
   }
   const text = json.choices[0]?.message?.content ?? ''
 
   const parsed = extractJsonObject<GeneratedText>(text)
   if (!parsed || typeof parsed.content !== 'string') {
+    // finish_reason==='length' は max_tokens 到達による途中破断。
+    // （reasoning モデルでは思考トークンも max_tokens を消費する点に注意）
+    if (json.choices[0]?.finish_reason === 'length') {
+      throw new Error('AI応答が長すぎて途中で切れました。少し時間をおいて再試行してください')
+    }
     throw new Error('AI応答のパースに失敗しました')
   }
   return {
