@@ -275,6 +275,24 @@ function isAuthError(e: unknown): boolean {
   )
 }
 
+// 長期トークンの「事前リフレッシュ」しきい値。期限まで 10 日を切ったら publish 前に rotate する。
+// Meta(Threads/Instagram) の長期トークンは 60 日有効で、失効後は refresh できず再連携が必要になる。
+// 失効後ではなく「有効なうち」に更新することで、定期投稿しているアカウントは自動で延命される。
+const PROACTIVE_REFRESH_THRESHOLD_MS = 10 * 24 * 60 * 60 * 1000
+
+/**
+ * 長期トークンが「まだ有効だが期限が近い」かを判定する。
+ * - token_expires_at が無い（手動貼り付けトークン等、期限不明）→ false（reactive 任せ）
+ * - 既に失効済み → false（事前 refresh しても Meta 側で弾かれるため reactive 任せ）
+ */
+function isLongLivedTokenNearExpiry(account: Account): boolean {
+  if (!account.token_expires_at) return false
+  const expiresAt = new Date(account.token_expires_at).getTime()
+  if (Number.isNaN(expiresAt)) return false
+  const now = Date.now()
+  return expiresAt > now && expiresAt - now < PROACTIVE_REFRESH_THRESHOLD_MS
+}
+
 /**
  * validate + publish を行う。auth error なら 1 回だけ refresh を試みて再投稿する。
  */
@@ -287,6 +305,16 @@ export async function publishPost(ctx: PublishContext): Promise<PublishResult> {
     throw new PublishError('PLATFORM_UNSUPPORTED', `${account.platform} の投稿は未対応です`)
   }
   publisher.validate(dctx)
+
+  // [事前リフレッシュ] 期限が近い（まだ有効な）長期トークンは publish 前に rotate しておく。
+  // best-effort: tryRefreshToken は内部で例外を握り潰し account を mutate する。失敗しても
+  // publish は続行し、auth エラーになれば下の reactive リトライが拾う。
+  if (
+    (account.platform === 'threads' || account.platform === 'instagram') &&
+    isLongLivedTokenNearExpiry(account)
+  ) {
+    await tryRefreshToken(account)
+  }
 
   try {
     return await publisher.publish(dctx)
@@ -848,8 +876,16 @@ export async function publishVideo(ctx: VideoPublishContext): Promise<VideoPubli
   }
   publisher.validate(dctx)
 
+  // [事前リフレッシュ] Instagram の長期トークンが期限間近なら publish 前に rotate しておく。
+  // （コンテナ作成前なので二重投稿の懸念なし。失敗時は元 ctx のまま続行し reactive 任せ）
+  let publishCtx = dctx
+  if (platform === 'instagram' && isLongLivedTokenNearExpiry(dctx.account)) {
+    const next = await refreshInstagramAccountToken(dctx.account)
+    if (next) publishCtx = { ...dctx, account: next }
+  }
+
   try {
-    return await publisher.publish(dctx)
+    return await publisher.publish(publishCtx)
   } catch (e) {
     if (!isVideoAuthError(e)) throw e
 
@@ -857,20 +893,20 @@ export async function publishVideo(ctx: VideoPublishContext): Promise<VideoPubli
     // TikTok は publish 前に creator-info 取得→トークン rotate して 1 回だけリトライ。
     // これはアップロード前のトークン失効を救済するもので、init 前なので二重投稿しない。
     if (platform === 'tiktok') {
-      const next = await refreshTikTokAccountToken(dctx.account)
+      const next = await refreshTikTokAccountToken(publishCtx.account)
       if (!next) {
         throw new Error('TikTok のアクセストークン更新に失敗しました。再連携してください')
       }
-      return publisher.publish({ ...dctx, account: next })
+      return publisher.publish({ ...publishCtx, account: next })
     }
 
     // Instagram も token rotate して 1 回だけ retry（コンテナ作成前のトークン失効を救済）。
     if (platform === 'instagram') {
-      const next = await refreshInstagramAccountToken(dctx.account)
+      const next = await refreshInstagramAccountToken(publishCtx.account)
       if (!next) {
         throw new Error('Instagram のアクセストークン更新に失敗しました。再連携してください')
       }
-      return publisher.publish({ ...dctx, account: next })
+      return publisher.publish({ ...publishCtx, account: next })
     }
 
     // YouTube: publish は内部冒頭で必ず access token を refresh してから upload する

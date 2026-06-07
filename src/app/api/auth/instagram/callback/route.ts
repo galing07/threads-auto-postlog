@@ -7,8 +7,10 @@
 //   4. access_token は ENCRYPTION_KEY で暗号化して accounts へ upsert
 //   5. /dashboard/accounts?platform=instagram&success=1 へリダイレクト
 //
-// 必須環境変数: INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET / ENCRYPTION_KEY
-//   （任意）INSTAGRAM_REDIRECT_URI
+// 資格情報: アプリ ID / シークレットは環境変数ではなくユーザーごとに DB 保存
+//   （fetchInstagramAppCredentials）。ENCRYPTION_KEY のみ環境変数（token 暗号化用）。
+//   （任意）INSTAGRAM_REDIRECT_URI: 未設定なら NEXT_PUBLIC_APP_URL から自動生成。
+//   Meta に登録するリダイレクト URI と完全一致させること（連携パネルに実値を表示）。
 
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
@@ -98,7 +100,20 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // 同じ user_id + platform=instagram + instagram_user_id があれば update、なければ insert
+  const accessTokenEnc = encryptSecret(result.accessToken)
+  const tokenExpiresAt = new Date(result.expiresAt).toISOString()
+  const name = (result.username ? `@${result.username}` : 'Instagram アカウント').slice(0, 100)
+
+  // 再連携時に上書きするのは name / token / 有効期限 / is_active のみ。
+  // ユーザーが設定した tone / persona / target_audience 等は維持する。
+  const reconnectFields = {
+    name,
+    access_token: accessTokenEnc,
+    token_expires_at: tokenExpiresAt,
+    is_active: true,
+  }
+
+  // 既存の同一アカウント (user_id + platform=instagram + instagram_user_id) を探す。
   const { data: existing, error: selectError } = await admin
     .from('accounts')
     .select('id')
@@ -112,42 +127,50 @@ export async function GET(req: NextRequest) {
     return redirectFailure('db_error')
   }
 
-  const accessTokenEnc = encryptSecret(result.accessToken)
-  const tokenExpiresAt = new Date(result.expiresAt).toISOString()
-  const name = (result.username ? `@${result.username}` : 'Instagram アカウント').slice(0, 100)
-
   if (existing?.id) {
     const { error: updateError } = await admin
       .from('accounts')
-      .update({
-        name,
-        access_token: accessTokenEnc,
-        token_expires_at: tokenExpiresAt,
-        is_active: true,
-      })
+      .update(reconnectFields)
       .eq('id', existing.id)
     if (updateError) {
       console.error('[instagram/callback] update failed', updateError.message)
       return redirectFailure('db_error')
     }
-  } else {
-    const { error: insertError } = await admin
-      .from('accounts')
-      .insert({
-        user_id: user.id,
-        platform: 'instagram',
-        name,
-        tone: 'friendly',
-        access_token: accessTokenEnc,
-        instagram_user_id: result.igUserId,
-        token_expires_at: tokenExpiresAt,
-        is_active: true,
-      })
-    if (insertError) {
-      console.error('[instagram/callback] insert failed', insertError.message)
-      return redirectFailure('db_error')
-    }
+    return redirectSuccess()
   }
 
-  return redirectSuccess()
+  // 新規 INSERT。別タブから同時に認可されると competing INSERT になり得るため、
+  // 一意制約 (accounts_user_platform_ig_uid_key) 違反(23505)を捕捉して UPDATE にフォールバック。
+  // これで「SELECT→INSERT の隙間に他リクエストが INSERT」しても重複行は作られない。
+  const { error: insertError } = await admin
+    .from('accounts')
+    .insert({
+      user_id: user.id,
+      platform: 'instagram',
+      tone: 'friendly',
+      instagram_user_id: result.igUserId,
+      ...reconnectFields,
+    })
+
+  if (!insertError) {
+    return redirectSuccess()
+  }
+
+  if (insertError.code === '23505') {
+    // 競合: 既に同じ instagram_user_id の行が存在する → それを更新して再連携扱いにする。
+    const { error: raceUpdateError } = await admin
+      .from('accounts')
+      .update(reconnectFields)
+      .eq('user_id', user.id)
+      .eq('platform', 'instagram')
+      .eq('instagram_user_id', result.igUserId)
+    if (raceUpdateError) {
+      console.error('[instagram/callback] race update failed', raceUpdateError.message)
+      return redirectFailure('db_error')
+    }
+    return redirectSuccess()
+  }
+
+  console.error('[instagram/callback] insert failed', insertError.message)
+  return redirectFailure('db_error')
 }

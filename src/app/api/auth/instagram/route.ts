@@ -6,18 +6,20 @@
 //   2. CSRF 対策の state を生成 → HttpOnly Cookie に保存
 //   3. Instagram 認可 URL にリダイレクト
 //
-// 必須環境変数:
-//   - INSTAGRAM_APP_ID:     Metaアプリ → Instagram設定 の Instagram アプリ ID（client_id）
-//   - INSTAGRAM_APP_SECRET: 同 アプリシークレット（callback で使用）
-//   - INSTAGRAM_REDIRECT_URI（任意）: 未設定なら NEXT_PUBLIC_APP_URL から自動生成
-//   - ENCRYPTION_KEY:       access_token 暗号化に使う鍵（callback で使用）
+// 資格情報の保存場所:
+//   - Instagram アプリ ID / アプリシークレット: 環境変数ではなく「ユーザーごとにアプリ内 DB」に
+//     保存する（設定/連携パネル → fetchInstagramAppCredentials）。マルチテナント前提のため。
+//   - INSTAGRAM_REDIRECT_URI（任意）: 未設定なら NEXT_PUBLIC_APP_URL から自動生成。
+//     Meta の「ビジネスログイン設定」に登録するリダイレクト URI と完全一致させること
+//     （連携パネルに実値を表示しているのでそれをコピーする）。
+//   - ENCRYPTION_KEY: access_token 暗号化に使う鍵（callback で使用）。
 
 import 'server-only'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { fetchInstagramAppCredentials } from '@/lib/ai/api-keys'
-import { INSTAGRAM_OAUTH_AUTHORIZE_URL, INSTAGRAM_OAUTH_SCOPES } from '@/lib/platforms/instagram'
+import { buildInstagramAuthorizeUrl } from '@/lib/platforms/instagram'
 
 const INSTAGRAM_OAUTH_STATE_COOKIE = 'instagram_oauth_state'
 const INSTAGRAM_OAUTH_STATE_MAX_AGE_SEC = 600 // 10 分
@@ -45,26 +47,21 @@ export async function GET() {
     return NextResponse.redirect(new URL('/login', appUrl()))
   }
 
-  // アプリID/シークレットは環境変数ではなくユーザーごとにアプリ内で保存（設定画面/連携パネル）
-  const { appId: clientId } = await fetchInstagramAppCredentials()
-  if (!clientId) {
+  // アプリID/シークレットは環境変数ではなくユーザーごとにアプリ内で保存（設定画面/連携パネル）。
+  // callback ではトークン交換に appSecret が必須なので、開始時点で両方揃っているか確認する。
+  // appId だけ確認していると、ユーザーが Instagram で「許可」した後に callback で
+  // app_not_configured になり、無駄に認可だけ済んでしまう（P3）。
+  const { appId: clientId, appSecret } = await fetchInstagramAppCredentials()
+  if (!clientId || !appSecret) {
     return redirectToAccounts('app_not_configured')
   }
 
   const state = crypto.randomBytes(24).toString('hex')
 
-  const params = new URLSearchParams({
-    // Meta公式「Business Login for Instagram」の認可URL形式に準拠。
-    // enable_fb_login=0: Facebookログイン経路を無効化し、純粋なInstagramログイン経路を強制する。
-    enable_fb_login: '0',
-    client_id: clientId,
-    redirect_uri: instagramRedirectUri(),
-    response_type: 'code',
-    scope: INSTAGRAM_OAUTH_SCOPES.join(','),
-    state,
-  })
-
-  const res = NextResponse.redirect(`${INSTAGRAM_OAUTH_AUTHORIZE_URL}?${params.toString()}`)
+  // 認可 URL は instagram.ts の共通ビルダーで生成（enable_fb_login=0 等のパラメータを単一情報源化）
+  const res = NextResponse.redirect(
+    buildInstagramAuthorizeUrl({ clientId, redirectUri: instagramRedirectUri(), state }),
+  )
   // state(CSRF)クッキーは OAuth の戻り（instagram.com → 当サイトへの cross-site トップレベル遷移）でも
   // 確実にブラウザから送られる必要がある。SameSite=Lax だと一部の戻り遷移（フル再ログイン経由等）で
   // 取りこぼされ state_missing になるため、SameSite=None(secure必須) を使う。当サイト発行の

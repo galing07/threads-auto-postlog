@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen, MessageCircle, Camera, ExternalLink, HelpCircle, Trash2 } from 'lucide-react'
+import { Plus, User, X, AlertCircle, Eye, EyeOff, BookOpen, MessageCircle, Camera, ExternalLink, HelpCircle, Trash2, Copy, Check } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -60,11 +60,11 @@ const SETUP_GUIDES: Record<SupportedPlatform, SetupGuide> = {
     steps: [
       '投稿先のInstagramを「プロアカウント（ビジネス or クリエイター）」にしておく（IGアプリ → 設定 → アカウントの種類とツール）',
       '【初回のみ・管理者】Metaでアプリを作成 → ユースケースで「Instagramでメッセージとコンテンツを管理」を選択して作成（Facebookページは不要）',
-      '【初回のみ・管理者】作成したアプリの「Instagram」→「ビジネスログインの設定」で、リダイレクトURIに  https://threads-auto-post-umber.vercel.app/api/auth/instagram/callback  を登録',
-      '【初回のみ・管理者】同じ画面の Instagram アプリID / アプリシークレットを、デプロイ環境の環境変数 INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET に設定',
+      '【初回のみ・管理者】作成したアプリの「Instagram」→「ビジネスログインの設定」で、リダイレクトURIに ↓の連携パネルに表示される値（「MetaのリダイレクトURIに登録してください」の欄）を完全一致でコピー登録する（環境によって値が違うため、必ずパネルの表示値を使う）',
+      '【初回のみ・管理者】同じ画面の Instagram 専用アプリID / アプリシークレットを、↓の連携パネルの入力欄に貼り付けて保存（環境変数ではなくアプリ内に暗号化保存されます）',
       '↓の「Instagramと連携」ボタンを押す → Instagramのログイン画面で対象アカウントを選び「許可」→ 自動で連携完了（トークン取得・保存まで自動）',
       '2個目以降のIGアカウントも、ボタンを押してそのアカウントでログイン・許可するだけ（アプリの再作成は不要）',
-      '💡トラブル時: ボタンを押しても「設定が不足」と出る→ 手順4の環境変数が未設定／ログイン後にエラー→ 手順3のリダイレクトURIが一致しているか確認／投稿先が選べない→ 手順1でプロアカウントになっているか確認',
+      '💡トラブル時: ボタンを押しても「アプリ ID / シークレットが未設定」と出る→ 手順4のアプリ設定を連携パネルで保存したか確認／ログイン後にエラー→ 手順3のリダイレクトURIがパネル表示値と完全一致しているか確認／投稿先が選べない→ 手順1でプロアカウントになっているか確認',
     ],
   },
   x: {
@@ -145,6 +145,9 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
   const [savedAppId, setSavedAppId] = useState<string | null>(null)
   const [showSecret, setShowSecret] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Meta に登録すべきリダイレクト URI の実値（実フローが送るのと同一）。ガイドのハードコード排除。
+  const [redirectUri, setRedirectUri] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     fetch('/api/api-keys')
@@ -155,7 +158,23 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
+    // 実際に送られる redirect_uri を取得して画面に表示（環境ごとに正しい値を出す）
+    fetch('/api/auth/instagram/config')
+      .then(r => r.json())
+      .then((d: { redirectUri?: string }) => setRedirectUri(d.redirectUri ?? null))
+      .catch(() => {})
   }, [])
+
+  async function copyRedirectUri() {
+    if (!redirectUri) return
+    try {
+      await navigator.clipboard.writeText(redirectUri)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error('コピーに失敗しました。手動で選択してコピーしてください')
+    }
+  }
 
   function goConnect() {
     window.location.href = '/api/auth/instagram'
@@ -202,6 +221,29 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
           <p className="text-[11px] leading-relaxed text-gray-500">
             ⚠️ Facebookアプリの「基本設定」にあるアプリIDではありません。Metaアプリ →「Instagram」→「APIセットアップ（Instagramログイン用）」の画面にある<strong>Instagram専用のアプリID / アプリシークレット</strong>を入力してください（FacebookのアプリIDを入れると「Invalid platform app」エラーになります）。暗号化して保存され、本人のみアクセスできます。
           </p>
+
+          {/* Meta に登録すべきリダイレクト URI を実値で表示（ガイドのハードコード排除・環境ごとに正しい値） */}
+          {redirectUri && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
+              <p className="text-[11px] font-medium text-amber-800">
+                Metaの「ビジネスログインの設定」→ リダイレクトURI に、以下を<strong>完全一致</strong>で登録してください：
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="flex-1 break-all rounded bg-white px-2 py-1.5 font-mono text-[11px] text-gray-800 ring-1 ring-amber-200">
+                  {redirectUri}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyRedirectUri}
+                  aria-label="リダイレクトURIをコピー"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-amber-700 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                >
+                  {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
             <FieldLabel>Instagram アプリ ID（Instagram専用・FacebookアプリIDではない）</FieldLabel>
             <Input value={appId} onChange={e => setAppId(e.target.value)} placeholder="例：1234567890123456" />

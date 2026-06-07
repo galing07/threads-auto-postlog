@@ -269,7 +269,17 @@ export async function POST(req: NextRequest) {
       .select(PUBLIC_ACCOUNT_COLUMNS)
       .single()
 
-    if (error) throw error
+    if (error) {
+      // 一意制約 (accounts_user_platform_ig_uid_key): 同じ Instagram プロアカウントを
+      // 二重登録しようとした場合。汎用 500 ではなく分かりやすい 409 を返す。
+      if ((error as { code?: string }).code === '23505') {
+        return NextResponse.json(
+          { error: 'この Instagram アカウントは既に登録されています', code: 'DUPLICATE_ACCOUNT' },
+          { status: 409 },
+        )
+      }
+      throw error
+    }
     return NextResponse.json(data)
   } catch (e) {
     console.error('[accounts POST]', e instanceof Error ? e.message : 'unknown')

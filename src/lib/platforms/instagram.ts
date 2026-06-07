@@ -23,6 +23,29 @@ export const INSTAGRAM_OAUTH_SCOPES = [
   'instagram_business_content_publish',
 ]
 
+/**
+ * Business Login for Instagram の認可 URL を組み立てる（単一情報源）。
+ *
+ * 実フロー (route.ts) と診断 (debug/route.ts) で必ず同じ URL を生成するために共通化する。
+ * enable_fb_login=0 は Facebook ログイン経路を無効化し純粋な Instagram ログインを強制する
+ * 重要パラメータで、ここに含めないと「診断で見える URL」と「実際に送る URL」がズレる。
+ */
+export function buildInstagramAuthorizeUrl(params: {
+  clientId: string
+  redirectUri: string
+  state: string
+}): string {
+  const query = new URLSearchParams({
+    enable_fb_login: '0',
+    client_id: params.clientId,
+    redirect_uri: params.redirectUri,
+    response_type: 'code',
+    scope: INSTAGRAM_OAUTH_SCOPES.join(','),
+    state: params.state,
+  })
+  return `${INSTAGRAM_OAUTH_AUTHORIZE_URL}?${query.toString()}`
+}
+
 /** Instagram キャプション上限 (Reels / Feed 共通) — 単一情報源 */
 export const INSTAGRAM_CAPTION_MAX = 2200
 
@@ -78,13 +101,25 @@ async function igRequest<T>(
 
   const res = await fetch(`${IG_API_BASE}${path}`, init)
   if (!res.ok) {
-    // 機密情報 (token / 内部メタデータ等) は出力しない。status と path のみ。
-    // 詳細が必要な場合は呼び出し側で thrown Error の message を見る。
-    console.error('[Instagram API]', method, path, res.status)
-    if (res.status === 401 || res.status === 403) {
-      throw new InstagramAuthError()
+    // Graph API のエラー本文から、機密を含まない説明文だけを抽出してログ＋例外に載せる。
+    // 形式: { error: { message, type, code, error_subcode, error_user_msg } }
+    // トークン等の機密は元々ボディに含まれない（path/status と error.message のみ扱う）。
+    const raw = await res.text().catch(() => '')
+    let detail = ''
+    try {
+      const j = JSON.parse(raw) as {
+        error?: { message?: string; error_user_msg?: string; code?: number; error_subcode?: number }
+      }
+      detail = (j.error?.error_user_msg || j.error?.message || '').toString().slice(0, 250)
+    } catch {
+      // JSON でない場合は先頭のみ
+      detail = raw.replace(/\s+/g, ' ').slice(0, 200)
     }
-    throw new Error(`Instagram API error (HTTP ${res.status})`)
+    console.error('[Instagram API]', method, path, res.status, detail)
+    if (res.status === 401 || res.status === 403) {
+      throw new InstagramAuthError(detail ? `Instagram 認証/権限エラー: ${detail}` : undefined)
+    }
+    throw new Error(`Instagram API error (HTTP ${res.status})${detail ? `: ${detail}` : ''}`)
   }
   return res.json() as Promise<T>
 }
