@@ -66,11 +66,14 @@ export async function GET(req: NextRequest) {
   const stateCookie = cookieStore.get(INSTAGRAM_OAUTH_STATE_COOKIE)?.value
   cookieStore.delete(INSTAGRAM_OAUTH_STATE_COOKIE)
   if (!stateCookie) {
+    // 診断: cookie が来ていない＝SameSite/属性で取りこぼし or 期限切れ。値は出さず有無のみ。
+    console.error('[instagram/callback] state_missing (cookie not received). authed=', !!user, 'hasQueryState=', !!stateFromQuery)
     return redirectFailure('state_missing')
   }
   const a = Buffer.from(stateCookie)
   const b = Buffer.from(stateFromQuery)
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    console.error('[instagram/callback] state_mismatch (cookieLen=' + a.length + ' queryLen=' + b.length + ')')
     return redirectFailure('state_mismatch')
   }
 
