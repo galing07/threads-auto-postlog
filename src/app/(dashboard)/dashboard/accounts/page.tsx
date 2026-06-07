@@ -129,6 +129,31 @@ function SetupGuide({ platform, defaultOpen }: { platform: SupportedPlatform; de
   )
 }
 
+/**
+ * OAuth 認可を「別タブ」で開く（元の画面を保持したまま連携できるように）。
+ * ポップアップブロッカーで開けなかった場合は同タブ遷移にフォールバックする。
+ *
+ * 注: window.open に 'noopener' を渡すと仕様上「成功時でも null」が返り、
+ *     ブロック判定（戻り値 null）と区別できなくなる。そのため noopener は付けず、
+ *     開けたら tab.opener=null で逆タブナビング(reverse tabnabbing)を遮断する
+ *     （開く先は自前の /api/auth/* で信頼済みなので実害はほぼ無いが多層防御）。
+ * ※ クリックのユーザージェスチャから「同期的に」呼ぶこと（await 後に呼ぶとブロックされる）。
+ */
+// 連打で OAuth タブが複数開くのを防ぐ簡易ガード（モジュールスコープ = タブ単位で1つ）。
+let oauthOpening = false
+function openOAuthInNewTab(url: string) {
+  if (oauthOpening) return // 直近に開いた直後の二重クリックは無視
+  oauthOpening = true
+  setTimeout(() => { oauthOpening = false }, 1500)
+  const tab = window.open(url, '_blank')
+  if (tab) {
+    try { tab.opener = null } catch { /* 既に遷移済み等は無視 */ }
+  } else {
+    // ブロックされた / 開けなかった場合は同タブで開いて連携を継続できるようにする
+    window.location.href = url
+  }
+}
+
 // Instagram は OAuth でつなぐため、トークン貼り付けではなく「連携ボタン」方式。
 // 初回のみ Instagram アプリ ID / シークレットを入力（環境変数ではなくユーザーごとに暗号化保存）。
 function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
@@ -172,8 +197,9 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
     }
   }
 
+  // 設定済み（保存不要）の場合の連携ボタン用。直接クリックなので別タブをそのまま開ける。
   function goConnect() {
-    window.location.href = '/api/auth/instagram'
+    openOAuthInNewTab('/api/auth/instagram')
   }
 
   async function saveAndConnect() {
@@ -181,6 +207,10 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
       toast.error('アプリ ID とアプリシークレットを両方入力してください')
       return
     }
+    // ポップアップブロッカー回避: 保存(await)より前に、クリックのユーザージェスチャ内で
+    // 空タブを先に開いておき、保存成功後にそのタブを認可URLへ遷移させる
+    // （await 後に window.open するとジェスチャが切れてブロックされるため）。
+    const authTab = window.open('about:blank', '_blank')
     setSaving(true)
     try {
       const res = await fetch('/api/api-keys', {
@@ -192,8 +222,18 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
         const d = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(d.error ?? '保存に失敗しました')
       }
-      goConnect()
+      if (authTab && !authTab.closed) {
+        authTab.location.href = '/api/auth/instagram'
+        try { authTab.opener = null } catch { /* 遷移済み等は無視 */ }
+      } else {
+        // 事前に開けなかった / 閉じられた場合は同タブで連携を継続
+        window.location.href = '/api/auth/instagram'
+      }
+      // 別タブに連携を委ねたので元タブはフォームを操作可能な状態に戻す
+      // （旧実装は同タブ遷移前提で setSaving(false) していなかった）
+      setSaving(false)
     } catch (e) {
+      if (authTab && !authTab.closed) authTab.close() // 失敗時は開いた空タブを閉じる
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')
       setSaving(false)
     }
@@ -206,7 +246,7 @@ function InstagramConnectPanel({ onCancel }: { onCancel: () => void }) {
       <div className="rounded-lg border border-pink-100 bg-pink-50/60 p-4">
         <p className="text-sm font-semibold text-gray-800">Instagramと連携</p>
         <p className="mt-1 text-xs leading-relaxed text-gray-600">
-          ボタンを押すとInstagramのログイン画面が開きます。投稿したいアカウントでログインして「許可」するだけで連携完了です。
+          ボタンを押すと<strong>別タブ</strong>でInstagramのログイン画面が開きます。投稿したいアカウントでログインして「許可」するだけで連携完了です（完了後この画面に戻ると一覧に反映されます）。
           <br />Facebookページもアクセストークンの貼り付けも不要です。
         </p>
       </div>
@@ -314,13 +354,13 @@ function XConnectPanel({ onManual, onCancel }: { onManual: () => void; onCancel:
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
         <p className="text-sm font-semibold text-gray-800">Xと連携</p>
         <p className="mt-1 text-xs leading-relaxed text-gray-600">
-          ボタンを押すとXの認可画面が開きます。投稿したいアカウントでログインして「アプリを許可」するだけで連携完了です（API Key などの貼り付けは不要）。
+          ボタンを押すと<strong>別タブ</strong>でXの認可画面が開きます。投稿したいアカウントでログインして「アプリを許可」するだけで連携完了です（API Key などの貼り付けは不要。完了後この画面に戻ると一覧に反映されます）。
         </p>
       </div>
 
       <button
         type="button"
-        onClick={() => { window.location.href = '/api/auth/x' }}
+        onClick={() => openOAuthInNewTab('/api/auth/x')}
         className="flex w-full items-center justify-center gap-2 rounded-md bg-black px-4 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-gray-800"
       >
         <XBrandIcon className="h-4 w-4 text-white" />
@@ -513,7 +553,20 @@ export default function AccountsPage() {
     clientSecret: '',
   })
   useEffect(() => {
-    fetch('/api/accounts').then(r => r.json()).then(setAccounts).catch(() => {})
+    const loadAccounts = () => {
+      fetch('/api/accounts')
+        .then(r => r.json())
+        .then(d => { if (Array.isArray(d)) setAccounts(d) }) // エラー応答(配列以外)で落とさない
+        .catch(() => {})
+    }
+    loadAccounts()
+    // OAuth を「別タブ」で完了して戻ってきた時など、タブが再表示されたら一覧を最新化する。
+    // （連携結果は別タブ側で表示されるため、元タブの一覧が古いままになるのを防ぐ）
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadAccounts()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   // OAuth 連携（Instagram 等）から戻ってきた時の結果表示 + URL クリーンアップ
