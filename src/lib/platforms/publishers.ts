@@ -14,7 +14,8 @@ import {
   InstagramAuthError,
   refreshInstagramAccessToken,
 } from './instagram'
-import { createXTweet, createXThread, uploadXMedia, XAuthError, type XCredentials } from './x'
+import { createXTweet, createXThread, uploadXMedia, XAuthError, type XAuth, type XCredentials } from './x'
+import { refreshXToken } from './x-oauth'
 import { PublishError } from './errors'
 import {
   refreshYouTubeToken,
@@ -93,6 +94,19 @@ function xCredentials(account: Account): XCredentials {
   }
 }
 
+/** OAuth2 連携アカウント（x_refresh_token あり）か。手動4キー(OAuth1)と区別する。 */
+function isXOAuth2(account: Account): boolean {
+  return !!account.x_refresh_token
+}
+
+/** 投稿に使う XAuth を組み立てる。OAuth2 を優先し、無ければ手動4キー(OAuth1)。 */
+function xAuthFromAccount(account: Account): XAuth {
+  if (isXOAuth2(account)) {
+    return { mode: 'oauth2', accessToken: account.access_token! }
+  }
+  return { mode: 'oauth1', cred: xCredentials(account) }
+}
+
 const MAX_X_IMAGE_BYTES = 5 * 1024 * 1024 // X の画像上限相当
 const MAX_VIDEO_BYTES = 256 * 1024 * 1024 // YouTube Shorts 用上限ガード（256MB）
 
@@ -142,12 +156,19 @@ export function assertFetchableVideoUrl(raw: string): void {
 const xPublisher: Publisher = {
   platform: 'x',
   validate({ account }) {
+    if (isXOAuth2(account)) {
+      // OAuth2 連携: access_token（refresh で延命）があればよい
+      if (!account.access_token) {
+        throw new PublishError('X_NOT_CONFIGURED', 'X の連携が未完了です。アカウント画面から再連携してください')
+      }
+      return
+    }
     if (!account.x_api_key || !account.x_api_secret || !account.access_token || !account.x_access_secret) {
       throw new PublishError('X_NOT_CONFIGURED', 'X の4キー（API Key/Secret・Access Token/Secret）が設定されていません')
     }
   },
   async publish({ post, account }) {
-    const cred = xCredentials(account)
+    const auth = xAuthFromAccount(account)
     const text = post.text_content ?? ''
 
     // 画像があれば X にアップロードして media_id を取得（スレッド時は先頭ツイートに添付）
@@ -170,20 +191,20 @@ const xPublisher: Publisher = {
       }
       const bytes = new Uint8Array(arrayBuf)
       const mime = imgRes.headers.get('content-type') ?? 'image/png'
-      mediaIds = [await uploadXMedia(cred, bytes, mime)]
+      mediaIds = [await uploadXMedia(auth, bytes, mime)]
     }
 
     // 区切り記号は AI が生成するので揺れを吸収:
     // `\n---\n` / `\n-----\n` / 全角ハイフン / 周辺空白
     const parts = text.split(/\n[ \t]*[-―ー─]{3,}[ \t]*\n/).map(s => s.trim()).filter(Boolean)
     if (parts.length > 1) {
-      const results = await createXThread(cred, parts, mediaIds)
+      const results = await createXThread(auth, parts, mediaIds)
       return {
         platformPostId: results[0].id,
         platformPostIds: results.map(r => r.id),
       }
     }
-    const result = await createXTweet(cred, text, undefined, mediaIds)
+    const result = await createXTweet(auth, text, undefined, mediaIds)
     return { platformPostId: result.id }
   },
 }
@@ -215,6 +236,7 @@ function decryptAccountSecrets(account: Account): Account {
     x_api_key: decryptSecret(account.x_api_key),
     x_api_secret: decryptSecret(account.x_api_secret),
     x_access_secret: decryptSecret(account.x_access_secret),
+    x_refresh_token: decryptSecret(account.x_refresh_token),
   }
 }
 
@@ -263,7 +285,41 @@ async function tryRefreshToken(account: Account): Promise<boolean> {
     }
   }
 
-  // X は手動入力トークン運用なので refresh は実施しない（期限切れ時は再連携してもらう）
+  if (account.platform === 'x') {
+    // OAuth2 連携（x_refresh_token あり）のみ refresh 可能。手動4キーは更新不可（再連携が必要）。
+    if (!account.x_refresh_token) return false
+    const clientId = process.env.X_OAUTH_CLIENT_ID
+    const clientSecret = process.env.X_OAUTH_CLIENT_SECRET
+    if (!clientId || !clientSecret) {
+      console.error('[publishers] X_OAUTH_CLIENT_ID/SECRET が未設定です')
+      return false
+    }
+    if (!isEncryptionAvailable()) {
+      console.error('[publishers] ENCRYPTION_KEY 未設定のため X トークンを保存できません')
+      return false
+    }
+    try {
+      // account.x_refresh_token は decryptAccountSecrets で復号済みの平文。
+      // X は refresh のたびに refresh_token をローテートするので新旧両方を保存し直す。
+      const refreshed = await refreshXToken(clientId, clientSecret, account.x_refresh_token)
+      account.access_token = refreshed.accessToken
+      account.x_refresh_token = refreshed.refreshToken
+      account.token_expires_at = new Date(refreshed.expiresAt).toISOString()
+      await admin
+        .from('accounts')
+        .update({
+          access_token: encryptSecret(refreshed.accessToken),
+          x_refresh_token: encryptSecret(refreshed.refreshToken),
+          token_expires_at: account.token_expires_at,
+        })
+        .eq('id', account.id)
+      return true
+    } catch (e) {
+      console.error('[publishers] X refresh failed', e instanceof Error ? e.message : 'unknown')
+      return false
+    }
+  }
+
   return false
 }
 
@@ -294,6 +350,18 @@ function isLongLivedTokenNearExpiry(account: Account): boolean {
 }
 
 /**
+ * X OAuth2 の短命アクセストークン（約2時間）が失効/失効間近かを判定する。
+ * 長期トークン(Meta)用の isLongLivedTokenNearExpiry と違い、「既に失効」も true にする
+ * （X は refresh_token で再取得できるため、失効後でも事前 refresh が有効）。
+ */
+function isXAccessTokenStale(account: Account): boolean {
+  if (!account.token_expires_at) return true
+  const expiresAt = new Date(account.token_expires_at).getTime()
+  if (Number.isNaN(expiresAt)) return true
+  return expiresAt <= Date.now() + 5 * 60 * 1000 // 5分前から事前更新
+}
+
+/**
  * validate + publish を行う。auth error なら 1 回だけ refresh を試みて再投稿する。
  */
 export async function publishPost(ctx: PublishContext): Promise<PublishResult> {
@@ -313,6 +381,13 @@ export async function publishPost(ctx: PublishContext): Promise<PublishResult> {
     (account.platform === 'threads' || account.platform === 'instagram') &&
     isLongLivedTokenNearExpiry(account)
   ) {
+    await tryRefreshToken(account)
+  }
+
+  // [事前リフレッシュ] X OAuth2 のアクセストークンは約2hで失効する。失効/間近なら publish 前に
+  // 更新しておく（media upload→401→retry の無駄打ちを避ける）。手動4キーは x_refresh_token が
+  // 無いので対象外。
+  if (account.platform === 'x' && account.x_refresh_token && isXAccessTokenStale(account)) {
     await tryRefreshToken(account)
   }
 

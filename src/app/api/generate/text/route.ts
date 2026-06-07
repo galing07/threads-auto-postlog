@@ -27,6 +27,7 @@ const DEMO_ACCOUNT: Account = {
   x_api_key: null,
   x_api_secret: null,
   x_access_secret: null,
+  x_refresh_token: null,
   tiktok_open_id: null,
   tiktok_refresh_token: null,
   youtube_channel_id: null,

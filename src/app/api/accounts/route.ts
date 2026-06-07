@@ -214,10 +214,13 @@ export async function POST(req: NextRequest) {
       let xAccessLevel: string | null = null
       try {
         const me = await getXMe({
-          apiKey: xApiKey,
-          apiSecret: xApiSecret,
-          accessToken: accessTokenRaw,
-          accessSecret: xAccessSecret,
+          mode: 'oauth1',
+          cred: {
+            apiKey: xApiKey,
+            apiSecret: xApiSecret,
+            accessToken: accessTokenRaw,
+            accessSecret: xAccessSecret,
+          },
         })
         if (!xUserId) xUserId = me.id
         xAccessLevel = me.accessLevel

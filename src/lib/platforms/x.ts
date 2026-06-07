@@ -121,12 +121,25 @@ function buildOAuthHeader(
   )
 }
 
-async function xPost<T>(path: string, cred: XCredentials, body: unknown): Promise<T> {
+/**
+ * 投稿時の認証情報。OAuth 1.0a（手動4キー / HMAC-SHA1 署名）と
+ * OAuth 2.0（ブラウザ認可で得た User Access Token / Bearer）を統一的に扱う。
+ */
+export type XAuth =
+  | { mode: 'oauth1'; cred: XCredentials }
+  | { mode: 'oauth2'; accessToken: string }
+
+function buildAuthHeader(method: 'GET' | 'POST', url: string, auth: XAuth): string {
+  if (auth.mode === 'oauth2') return `Bearer ${auth.accessToken}`
+  return buildOAuthHeader(method, url, auth.cred)
+}
+
+async function xPost<T>(path: string, auth: XAuth, body: unknown): Promise<T> {
   const url = `${X_API_BASE}${path}`
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: buildOAuthHeader('POST', url, cred),
+      Authorization: buildAuthHeader('POST', url, auth),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
@@ -141,12 +154,12 @@ async function xPost<T>(path: string, cred: XCredentials, body: unknown): Promis
 
 async function xGet<T>(
   path: string,
-  cred: XCredentials,
+  auth: XAuth,
 ): Promise<{ data: T; accessLevel: string | null }> {
   const url = `${X_API_BASE}${path}`
   const res = await fetch(url, {
     method: 'GET',
-    headers: { Authorization: buildOAuthHeader('GET', url, cred) },
+    headers: { Authorization: buildAuthHeader('GET', url, auth) },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   if (!res.ok) {
@@ -167,7 +180,7 @@ async function xGet<T>(
  * v2 のレスポンスは { data: { id, media_key, ... } } で、id を media_id として使う。
  */
 export async function uploadXMedia(
-  cred: XCredentials,
+  auth: XAuth,
   bytes: Uint8Array,
   mimeType: string,
 ): Promise<string> {
@@ -178,7 +191,7 @@ export async function uploadXMedia(
 
   const res = await fetch(X_MEDIA_UPLOAD_URL, {
     method: 'POST',
-    headers: { Authorization: buildOAuthHeader('POST', X_MEDIA_UPLOAD_URL, cred) },
+    headers: { Authorization: buildAuthHeader('POST', X_MEDIA_UPLOAD_URL, auth) },
     body: form,
     signal: AbortSignal.timeout(MEDIA_UPLOAD_TIMEOUT_MS),
   })
@@ -207,7 +220,7 @@ export async function uploadXMedia(
 }
 
 export async function createXTweet(
-  cred: XCredentials,
+  auth: XAuth,
   text: string,
   replyToId?: string,
   mediaIds?: string[],
@@ -215,12 +228,12 @@ export async function createXTweet(
   const body: Record<string, unknown> = { text }
   if (replyToId) body.reply = { in_reply_to_tweet_id: replyToId }
   if (mediaIds && mediaIds.length > 0) body.media = { media_ids: mediaIds }
-  const result = await xPost<{ data: XTweetResult }>('/tweets', cred, body)
+  const result = await xPost<{ data: XTweetResult }>('/tweets', auth, body)
   return result.data
 }
 
 export async function createXThread(
-  cred: XCredentials,
+  auth: XAuth,
   parts: string[],
   mediaIds?: string[],
 ): Promise<XTweetResult[]> {
@@ -228,17 +241,17 @@ export async function createXThread(
   for (let i = 0; i < parts.length; i++) {
     const replyToId = results.at(-1)?.id
     // 画像はスレッド先頭ツイートにのみ添付
-    results.push(await createXTweet(cred, parts[i], replyToId, i === 0 ? mediaIds : undefined))
+    results.push(await createXTweet(auth, parts[i], replyToId, i === 0 ? mediaIds : undefined))
   }
   return results
 }
 
 export async function getXMe(
-  cred: XCredentials,
+  auth: XAuth,
 ): Promise<{ id: string; username: string; name: string; accessLevel: string | null }> {
   const { data: body, accessLevel } = await xGet<{ data: { id: string; username: string; name: string } }>(
     '/users/me',
-    cred,
+    auth,
   )
   return { ...body.data, accessLevel }
 }

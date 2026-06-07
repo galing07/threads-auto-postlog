@@ -36,6 +36,8 @@ export interface Account {
   x_api_key: string | null
   x_api_secret: string | null
   x_access_secret: string | null
+  // X OAuth 2.0 (PKCE) のリフレッシュトークン（暗号化保存）。これが存在する＝OAuth2連携アカウント。
+  x_refresh_token: string | null
   // TikTok / YouTube OAuth (refresh tokens are stored encrypted at the app layer)
   tiktok_open_id: string | null
   tiktok_refresh_token: string | null
