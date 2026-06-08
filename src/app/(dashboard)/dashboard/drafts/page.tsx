@@ -551,9 +551,9 @@ export default function DraftsPage() {
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>
-            下書き一覧
+            投稿一覧
           </h1>
-          <p className="mt-0.5 text-sm text-gray-500">生成した投稿・動画の管理</p>
+          <p className="mt-0.5 text-sm text-gray-500">下書き・予約・投稿済みの投稿と動画をまとめて管理</p>
         </div>
         <button
           onClick={() => load()}
