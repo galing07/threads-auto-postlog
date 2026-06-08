@@ -95,6 +95,10 @@ export default function XGeneratePage() {
   const isDemoMode = !selectedAccount
   const selectedRefName = referenceAccounts.find(r => r.id === selectedRefAccount)?.name
   const hasReference = !!(referencePost.trim() || referenceImage)
+  // 280字超過の事前検知（CharCounter と同じ code-point 数え）。Instagram の captionOver と同パターン。
+  const xOver = postMode === 'thread'
+    ? threadParts.some(p => [...p].length > X_LIMIT)
+    : [...generatedText].length > X_LIMIT
 
   async function handleGenerate(overrideTheme?: string) {
     const targetTheme = overrideTheme ?? theme
@@ -226,6 +230,11 @@ export default function XGeneratePage() {
   }
 
   async function handleSave(publish = false) {
+    // 280字超過のまま投稿しようとした場合は、X側で弾かれる前に止める
+    if (publish && xOver) {
+      toast.error(postMode === 'thread' ? '280字を超えているツイートがあります' : '280字を超えています')
+      return
+    }
     setLoading(true)
     try {
       const textContent = postMode === 'thread'
@@ -539,7 +548,7 @@ export default function XGeneratePage() {
             {!isDemoMode && (
               <Button
                 onClick={() => handleSave(true)}
-                disabled={loading}
+                disabled={loading || xOver}
                 isLoading={loading}
                 loadingText="投稿中..."
                 className="flex-1 gap-2"
@@ -549,6 +558,12 @@ export default function XGeneratePage() {
               </Button>
             )}
           </div>
+          {/* 超過時の理由（色だけの警告は見落とされやすいので明示） */}
+          {!isDemoMode && xOver && (
+            <p className="mt-2 text-right text-xs text-red-500">
+              {postMode === 'thread' ? '280字を超えているツイートがあります（赤字の件を短くしてください）' : '280字を超えています。短くすると投稿できます'}
+            </p>
+          )}
         </div>
       )}
     </GenerateLayout>

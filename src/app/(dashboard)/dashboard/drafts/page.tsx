@@ -45,10 +45,14 @@ const PLATFORM_BADGE: Record<string, { label: string; cls: string }> = {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleString('ja-JP', {
+  const d = new Date(iso)
+  const opts: Intl.DateTimeFormatOptions = {
     month: 'numeric', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
-  })
+  }
+  // 年をまたぐ予約・古い下書きの誤認を防ぐため、今年と違う場合だけ年を出す
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric'
+  return d.toLocaleString('ja-JP', opts)
 }
 
 interface AccountOption {
@@ -373,6 +377,17 @@ export default function DraftsPage() {
   }, [])
 
   async function handlePublish(postId: string, accountId?: string) {
+    // 本番SNSへの即時公開は取り消せないため、誤クリック防止に確認を挟む
+    const targetPost = posts.find(p => p.id === postId)
+    const acc = accounts.find(a => a.id === (accountId ?? targetPost?.account_id ?? ''))
+    const ok = await confirm({
+      title: '今すぐ投稿しますか？',
+      message: acc
+        ? `「${acc.name}」（${acc.platform}）に今すぐ公開します。公開後は取り消せません。`
+        : '今すぐ公開します。公開後は取り消せません。',
+      confirmLabel: '投稿する',
+    })
+    if (!ok) return
     setPublishing(postId)
     try {
       const res = await fetch(`/api/posts/${postId}/publish`, {
@@ -501,13 +516,13 @@ export default function DraftsPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="mb-4 flex gap-1 rounded-lg bg-gray-100 p-1">
+      <div className="mb-4 flex gap-1 overflow-x-auto rounded-lg bg-gray-100 p-1">
         {(['all', 'draft', 'scheduled', 'posted', 'failed', 'video'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={cx(
-              'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+              'flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-all',
               filter === f
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700',

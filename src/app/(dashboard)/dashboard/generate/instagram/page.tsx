@@ -232,8 +232,11 @@ export default function InstagramGeneratePage() {
       setSavedPost(post)
       if (publish && selectedAccount) {
         const pubRes = await fetch(`/api/posts/${post.id}/publish`, { method: 'POST' })
-        const pubData = await pubRes.json() as { error?: string }
-        if (pubData.error) throw new Error(pubData.error)
+        const pubData = await pubRes.json().catch(() => ({})) as { error?: string }
+        // Threads/X と判定を統一。非200は本文に error 無くても失敗扱い（偽の「投稿しました！」防止）
+        if (!pubRes.ok || pubData.error) {
+          throw new Error(pubData.error ?? '投稿に失敗しました（下書きは保存済み）')
+        }
       }
       setStep('done')
     } catch (e) {

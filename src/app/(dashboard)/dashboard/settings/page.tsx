@@ -5,6 +5,7 @@ import { Save, KeyRound, CheckCircle, AlertCircle, Eye, EyeOff, ExternalLink, Tr
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 interface KeysState {
   openrouter_masked: string | null
@@ -106,6 +107,7 @@ function KeyField({
 }
 
 export default function SettingsPage() {
+  const confirm = useConfirm()
   const [keys, setKeys] = useState<KeysState | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -171,7 +173,13 @@ export default function SettingsPage() {
 
   async function handleClear(provider: 'openrouter' | 'openai' | 'elevenlabs' | 'heygen') {
     const labels = { openrouter: 'OpenRouter', openai: 'OpenAI', elevenlabs: 'ElevenLabs', heygen: 'HeyGen' } as const
-    if (!confirm(`${labels[provider]} のキーを削除しますか？`)) return
+    const ok = await confirm({
+      title: `${labels[provider]} のキーを削除`,
+      message: '保存済みの API キーを削除します。該当する生成機能が使えなくなる場合があります。',
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (!ok) return
     setSaving(true)
     setMsg(null)
     try {

@@ -130,14 +130,22 @@ export function DoneScreen({
 // ── デモモード通知（プレビュー手順・全SNS共通） ───────────────
 export function DemoModeNotice({ note }: { note?: string }) {
   return (
-    <div className="flex items-center justify-between rounded-md border border-[#e5edf5] bg-[#F8FAFC] px-4 py-2.5">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#e5edf5] bg-[#F8FAFC] px-4 py-2.5">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[#E9F7F9] px-2 py-0.5 text-xs font-medium text-[#006F83]">
           デモモード
         </span>
-        <span className="text-xs text-gray-500">下書き保存のみ可能です</span>
+        <span className="text-xs text-gray-500">
+          {note ?? '下書き保存のみ可能です。実際に投稿するにはアカウント連携が必要です'}
+        </span>
       </div>
-      <span className="text-xs text-gray-400">{note ?? 'アカウントを追加すると投稿できます'}</span>
+      {/* どの生成ページからも同じ導線でアカウント連携へ飛べるように統一（#12/#29） */}
+      <Link
+        href="/dashboard/accounts"
+        className="shrink-0 text-xs font-medium text-[#006F83] hover:underline"
+      >
+        アカウントを連携する →
+      </Link>
     </div>
   )
 }

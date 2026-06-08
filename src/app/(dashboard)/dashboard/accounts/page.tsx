@@ -47,7 +47,7 @@ const SETUP_GUIDES: Record<SupportedPlatform, SetupGuide> = {
     ],
   },
   instagram: {
-    intro: '下の「Instagramと連携」ボタンを押して、Instagramでログイン・許可するだけで連携完了します。Facebookページもトークン貼り付けも不要です。（下の手順は、初回にMetaアプリをつなぐためのＭ管理者向け準備です。一度設定すれば以降は連携ボタンだけでOK）',
+    intro: '下の「Instagramと連携」ボタンを押して、Instagramでログイン・許可するだけで連携完了します。Facebookページもトークン貼り付けも不要です。（下の手順は、初回にMetaアプリをつなぐための管理者向け準備です。一度設定すれば以降は連携ボタンだけでOK）',
     links: [
       { label: 'Meta for Developers を開く', href: 'https://developers.facebook.com/apps' },
       { label: 'InstagramログインAPI 公式手順', href: 'https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login' },
