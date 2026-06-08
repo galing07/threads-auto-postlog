@@ -8,7 +8,7 @@
 //   3) PATCH /api/posts/[draftId] { imageUrl } で画像を添付
 // 画像生成はレート制限(約5件/分)があるため逐次実行＋進捗表示。
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Sparkles, CheckCircle, AlertCircle, Loader2, ImageIcon, FileText, ArrowRight, Lightbulb, Plus } from 'lucide-react'
@@ -45,6 +45,9 @@ export default function BatchGeneratePage() {
   const [items, setItems] = useState<BatchItem[]>([])
   // AI提案テーマ
   const { themeSuggestions, setThemeSuggestions, suggestLoading, suggestThemes } = useThemeSuggestions(selectedAccount)
+  // 実行中バッチの中断用（アンマウント時に無駄なAPI課金を止める）
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -72,24 +75,38 @@ export default function BatchGeneratePage() {
   const imageRequired = selectedPlatform === 'instagram'
   const effectiveWithImage = imageRequired ? true : withImage
 
-  function resolveThemes(): string[] {
-    return multiThemes
-      .split('\n')
-      .map(s => s.trim())
-      .filter(Boolean)
-      .slice(0, MAX_ITEMS)
+  // 入力欄を解析: 空行除去・前後空白除去・重複除去（同一テーマの二重生成を防ぐ）
+  function parseThemes(text: string): string[] {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const line of text.split('\n')) {
+      const t = line.trim()
+      if (!t || seen.has(t)) continue
+      seen.add(t)
+      out.push(t)
+    }
+    return out
   }
 
-  const previewThemes = resolveThemes()
+  const rawThemes = parseThemes(multiThemes)            // 重複除去後の全テーマ
+  const previewThemes = rawThemes.slice(0, MAX_ITEMS)   // 実際に生成される先頭5件
+  const overLimit = rawThemes.length > MAX_ITEMS        // 上限超過（超過分はドロップ）
+  const atMax = rawThemes.length >= MAX_ITEMS           // これ以上は追加不可
   const canRun = !running && !!selectedAccount && previewThemes.length > 0
 
-  // 提案チップのクリック: 入力欄に追加 / 既にあれば削除（トグル）
+  // 提案チップのクリック: 入力欄に追加 / 既にあれば削除（トグル）。手入力の生の行は極力保持する。
   function toggleTheme(t: string) {
     setMultiThemes(prev => {
-      const lines = prev.split('\n').map(s => s.trim()).filter(Boolean)
-      if (lines.includes(t)) return lines.filter(x => x !== t).join('\n')
-      if (lines.length >= MAX_ITEMS) return prev
-      return [...lines, t].join('\n')
+      const rawLines = prev.split('\n')
+      const idx = rawLines.findIndex(l => l.trim() === t)
+      if (idx >= 0) {
+        // 該当行のみ削除し、他の行（空行含む）はそのまま保持
+        return rawLines.filter((_, i) => i !== idx).join('\n')
+      }
+      if (parseThemes(prev).length >= MAX_ITEMS) return prev
+      // 末尾に1行追加（末尾の余分な改行のみ整理）
+      const base = prev.replace(/\n+$/, '')
+      return base ? `${base}\n${t}` : t
     })
   }
 
@@ -99,14 +116,23 @@ export default function BatchGeneratePage() {
 
   async function runBatch() {
     if (!selectedAccount) { toast.error('アカウントを選択してください'); return }
-    const themes = resolveThemes()
+    const themes = previewThemes
     if (themes.length === 0) { toast.error('テーマを入力してください'); return }
+
+    // 直前の実行が残っていれば中断してから開始
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    const { signal } = ctrl
 
     setRunning(true)
     setItems(themes.map(t => ({ theme: t, status: 'pending', withImage: effectiveWithImage })))
 
+    const isAbort = (e: unknown) => signal.aborted || (e instanceof DOMException && e.name === 'AbortError')
+
     let done = 0
     for (let i = 0; i < themes.length; i++) {
+      if (signal.aborted) break
       patchItem(i, { status: 'text' })
       try {
         // 1) 文章生成（下書きが自動作成され draftId が返る）
@@ -114,6 +140,7 @@ export default function BatchGeneratePage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accountId: selectedAccount, theme: themes[i] }),
+          signal,
         })
         const tData = await tRes.json().catch(() => ({})) as { content?: string; draftId?: string | null; error?: string }
         if (!tRes.ok || tData.error || !tData.content) {
@@ -129,6 +156,7 @@ export default function BatchGeneratePage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ accountId: selectedAccount, postContent: tData.content, style: 'diagram' }),
+              signal,
             })
             const imData = await imRes.json().catch(() => ({})) as { imageUrl?: string; error?: string }
             if (imRes.ok && imData.imageUrl) {
@@ -136,11 +164,13 @@ export default function BatchGeneratePage() {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ imageUrl: imData.imageUrl }),
+                signal,
               })
             } else {
               patchItem(i, { imageFailed: true })
             }
-          } catch {
+          } catch (e) {
+            if (isAbort(e)) throw e        // 中断は外側に伝播してループを止める
             patchItem(i, { imageFailed: true })
           }
         }
@@ -148,10 +178,12 @@ export default function BatchGeneratePage() {
         patchItem(i, { status: 'done' })
         done += 1
       } catch (e) {
+        if (isAbort(e)) break
         patchItem(i, { status: 'failed', error: e instanceof Error ? e.message.slice(0, 120) : '失敗しました' })
       }
     }
 
+    if (signal.aborted) return            // アンマウント等で中断された場合は後処理しない
     setRunning(false)
     if (done > 0) toast.success(`${done}件を下書きに保存しました`)
     else toast.error('生成に失敗しました')
@@ -170,7 +202,7 @@ export default function BatchGeneratePage() {
       <Card className="space-y-5">
         {/* アカウント */}
         <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">投稿先アカウント</p>
+          <label htmlFor="batch-account" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">投稿先アカウント</label>
           {accounts.length === 0 ? (
             <p className="text-xs text-amber-600">
               先にアカウントを連携してください（
@@ -178,7 +210,7 @@ export default function BatchGeneratePage() {
               ）
             </p>
           ) : (
-            <SelectNative value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)} disabled={running}>
+            <SelectNative id="batch-account" value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)} disabled={running}>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}（{a.platform}）</option>)}
             </SelectNative>
           )}
@@ -187,7 +219,7 @@ export default function BatchGeneratePage() {
         {/* テーマ入力（AI提案つき） */}
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">テーマ（1行に1つ・最大{MAX_ITEMS}件）</p>
+            <label htmlFor="batch-themes" className="text-xs font-semibold uppercase tracking-wider text-gray-500">テーマ（1行に1つ・最大{MAX_ITEMS}件）</label>
             <button
               type="button"
               onClick={suggestThemes}
@@ -195,13 +227,14 @@ export default function BatchGeneratePage() {
               className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-[#006F83] transition-colors hover:bg-[#E9F7F9] disabled:opacity-50"
             >
               {suggestLoading
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Lightbulb className="h-3.5 w-3.5" />}
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                : <Lightbulb className="h-3.5 w-3.5" aria-hidden />}
               {themeSuggestions.length > 0 ? '別の案を出す' : 'AIに提案してもらう'}
             </button>
           </div>
 
           <textarea
+            id="batch-themes"
             value={multiThemes}
             onChange={e => setMultiThemes(e.target.value)}
             disabled={running}
@@ -214,27 +247,34 @@ export default function BatchGeneratePage() {
           {themeSuggestions.length > 0 && (
             <div className="rounded-lg border border-[#cdeef3] bg-[#F7FCFD] p-3">
               <p className="mb-2 flex items-center gap-1 text-[11px] font-medium text-[#006F83]">
-                <Sparkles className="h-3 w-3" /> AIの提案（クリックで追加）
+                <Sparkles className="h-3 w-3" aria-hidden /> AIの提案（クリックで追加）
               </p>
+              {atMax && (
+                <p className="mb-2 text-[11px] text-amber-600">
+                  最大{MAX_ITEMS}件に達しました。追加するには選択中のテーマを外してください。
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {themeSuggestions.map(t => {
-                  const added = previewThemes.includes(t)
-                  const atMax = previewThemes.length >= MAX_ITEMS
+                  const added = rawThemes.includes(t)
+                  const blocked = !added && atMax
                   return (
                     <button
                       key={t}
                       type="button"
-                      disabled={running || (!added && atMax)}
+                      aria-pressed={added}
+                      title={blocked ? `最大${MAX_ITEMS}件までです。追加するには選択中のテーマを外してください。` : undefined}
+                      disabled={running || blocked}
                       onClick={() => toggleTheme(t)}
                       className={cx(
                         'inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition-colors',
                         added
                           ? 'border-[#00A3BF] bg-[#E9F7F9] font-medium text-[#006F83]'
                           : 'border-gray-200 bg-white text-gray-600 hover:border-[#00A3BF]',
-                        !added && atMax && 'cursor-not-allowed opacity-40',
+                        blocked && 'cursor-not-allowed opacity-40',
                       )}
                     >
-                      {added ? <CheckCircle className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                      {added ? <CheckCircle className="h-3 w-3" aria-hidden /> : <Plus className="h-3 w-3" aria-hidden />}
                       {t}
                     </button>
                   )
@@ -243,14 +283,21 @@ export default function BatchGeneratePage() {
             </div>
           )}
 
-          <p className="text-[11px] text-gray-400">入力中のテーマ数: {previewThemes.length} / 最大{MAX_ITEMS}件</p>
+          <div className="space-y-1">
+            <p className="text-[11px] text-gray-500">生成されるテーマ: {previewThemes.length} / 最大{MAX_ITEMS}件</p>
+            {overLimit && (
+              <p className="text-[11px] text-amber-600">
+                {rawThemes.length}件入力されています。先頭{MAX_ITEMS}件のみ生成され、{MAX_ITEMS + 1}件目以降は対象外です。
+              </p>
+            )}
+          </div>
         </div>
 
         {/* 画像 */}
         {imageRequired ? (
           // Instagram は画像必須のため、トグルではなく案内を表示（強制ON）
           <div className="flex items-start gap-2 rounded-md bg-[#F7FCFD] px-3 py-2.5 text-sm text-[#006F83]">
-            <ImageIcon className="mt-0.5 h-4 w-4 shrink-0" />
+            <ImageIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>Instagramは画像が必須のため、各投稿に図解画像を自動で生成します。</span>
           </div>
         ) : (
@@ -268,11 +315,11 @@ export default function BatchGeneratePage() {
 
         <div className="border-t border-gray-100 pt-4">
           <Button onClick={runBatch} disabled={!canRun} isLoading={running} loadingText="生成中..." className="w-full gap-2">
-            <Sparkles className="h-4 w-4" />
+            <Sparkles className="h-4 w-4" aria-hidden />
             {previewThemes.length > 0 ? `${previewThemes.length}件をまとめて生成` : 'まとめて生成'}
           </Button>
           {effectiveWithImage && (
-            <p className="mt-2 text-center text-[11px] text-gray-400">
+            <p className="mt-2 text-center text-[11px] text-gray-500">
               画像生成はレート制限のため1件ずつ順番に作ります（数分かかる場合があります）。
             </p>
           )}
@@ -281,10 +328,10 @@ export default function BatchGeneratePage() {
 
       {/* 進捗 */}
       {items.length > 0 && (
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 space-y-2" role="status" aria-live="polite" aria-atomic="false">
           {items.map((it, i) => (
             <div key={i} className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-2.5">
-              <span className="shrink-0">
+              <span className="shrink-0" aria-hidden>
                 {it.status === 'done' ? <CheckCircle className="h-4 w-4 text-green-600" />
                   : it.status === 'failed' ? <AlertCircle className="h-4 w-4 text-red-500" />
                   : it.status === 'pending' ? <FileText className="h-4 w-4 text-gray-300" />
@@ -303,7 +350,7 @@ export default function BatchGeneratePage() {
       )}
 
       {allDone && (
-        <div className="mt-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+        <div className="mt-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3" role="status">
           <span className="text-sm font-medium text-green-700">{doneCount}件を下書きに保存しました</span>
           <button
             onClick={() => router.push('/dashboard/drafts')}
