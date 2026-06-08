@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import { PLATFORM_BRAND, type BrandPlatform } from '@/components/ui/BrandIcons'
 import { cx } from '@/lib/utils'
 
@@ -75,6 +75,22 @@ export default function GeneratePage() {
           )
         })}
       </div>
+
+      {/* まとめて生成への導線 */}
+      <Link href="/dashboard/generate/batch" className="group mt-4 block">
+        <div className="flex items-center gap-4 rounded-xl border border-[#e5edf5] bg-white p-5 shadow-sm transition-all hover:border-[#00A3BF] hover:shadow-md">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E9F7F9]">
+            <Sparkles className="h-5 w-5 text-[#00A3BF]" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-gray-900">まとめて生成</h2>
+            <p className="mt-0.5 text-sm text-gray-500">
+              1テーマから複数バリエーション、または複数テーマを一度に生成して投稿一覧に下書き保存
+            </p>
+          </div>
+          <ArrowRight className="h-5 w-5 shrink-0 text-[#006F83] transition-transform group-hover:translate-x-0.5" />
+        </div>
+      </Link>
     </div>
   )
 }
