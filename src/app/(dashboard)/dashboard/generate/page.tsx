@@ -85,7 +85,7 @@ export default function GeneratePage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-gray-900">まとめて生成</h2>
             <p className="mt-0.5 text-sm text-gray-500">
-              1テーマから複数バリエーション、または複数テーマを一度に生成して投稿一覧に下書き保存
+              複数のテーマを一度に生成して投稿一覧に下書き保存（テーマはAIに提案してもらえます）
             </p>
           </div>
           <ArrowRight className="h-5 w-5 shrink-0 text-[#006F83] transition-transform group-hover:translate-x-0.5" />

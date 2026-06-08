@@ -1,11 +1,8 @@
 'use client'
 
-// まとめて生成: 複数の投稿を一度に作って「投稿一覧」に下書き保存する。
-// 3モード:
-//   - count   : 1テーマ × N件（切り口の違うバリエーションをまとめて）
-//   - suggest : AIが提案したテーマ案から複数選んで各1件
-//   - multi   : 複数テーマ（1行1テーマ）→ 各1件
-// 各アイテムは既存APIを順番に叩いて実現（サーバ集約せずクライアント orchestration）:
+// まとめて生成: 複数テーマを一度に作って「投稿一覧」に下書き保存する。
+// テーマは手入力でも、AIに提案させて選んでもよい（提案チップをクリックで入力欄に追加/削除）。
+// 各テーマは既存APIを順番に叩いて実現（サーバ集約せずクライアント orchestration）:
 //   1) POST /api/generate/text  → 下書き自動作成(draftId, content)
 //   2) (任意) POST /api/generate/image → imageUrl
 //   3) PATCH /api/posts/[draftId] { imageUrl } で画像を添付
@@ -14,17 +11,15 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Sparkles, CheckCircle, AlertCircle, Loader2, ImageIcon, FileText, ArrowRight, Lightbulb } from 'lucide-react'
+import { Sparkles, CheckCircle, AlertCircle, Loader2, ImageIcon, FileText, ArrowRight, Lightbulb, Plus } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { SelectNative } from '@/components/ui/Select'
 import { cx } from '@/lib/utils'
 import { useToast } from '@/components/ui/Toast'
 import { useThemeSuggestions } from '@/lib/hooks/use-theme-suggestions'
+import { SelectNative } from '@/components/ui/Select'
 import type { Account } from '@/types/database'
 
-type Mode = 'count' | 'suggest' | 'multi'
 type ItemStatus = 'pending' | 'text' | 'image' | 'done' | 'failed'
 
 interface BatchItem {
@@ -44,22 +39,12 @@ export default function BatchGeneratePage() {
   const toast = useToast()
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [selectedAccount, setSelectedAccount] = useState('')
-  const [mode, setMode] = useState<Mode>('count')
-  const [theme, setTheme] = useState('')
-  const [count, setCount] = useState(3)
   const [multiThemes, setMultiThemes] = useState('')
   const [withImage, setWithImage] = useState(true)
   const [running, setRunning] = useState(false)
   const [items, setItems] = useState<BatchItem[]>([])
-  // AI提案テーマ（suggestモード）
+  // AI提案テーマ
   const { themeSuggestions, setThemeSuggestions, suggestLoading, suggestThemes } = useThemeSuggestions(selectedAccount)
-  const [selectedThemes, setSelectedThemes] = useState<string[]>([])
-
-  // アカウントを切り替えたら提案・選択をリセット
-  useEffect(() => {
-    setThemeSuggestions([])
-    setSelectedThemes([])
-  }, [selectedAccount, setThemeSuggestions])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -77,19 +62,17 @@ export default function BatchGeneratePage() {
     return () => ctrl.abort()
   }, [])
 
+  // アカウントを切り替えたら提案をリセット（人格設定が変わるため）。手入力テーマは保持。
+  useEffect(() => {
+    setThemeSuggestions([])
+  }, [selectedAccount, setThemeSuggestions])
+
   const selectedPlatform = accounts.find(a => a.id === selectedAccount)?.platform
   // Instagram は画像必須なので画像生成を強制 ON
   const imageRequired = selectedPlatform === 'instagram'
   const effectiveWithImage = imageRequired ? true : withImage
 
   function resolveThemes(): string[] {
-    if (mode === 'count') {
-      const t = theme.trim()
-      return t ? Array.from({ length: count }, () => t) : []
-    }
-    if (mode === 'suggest') {
-      return selectedThemes.slice(0, MAX_ITEMS)
-    }
     return multiThemes
       .split('\n')
       .map(s => s.trim())
@@ -99,6 +82,16 @@ export default function BatchGeneratePage() {
 
   const previewThemes = resolveThemes()
   const canRun = !running && !!selectedAccount && previewThemes.length > 0
+
+  // 提案チップのクリック: 入力欄に追加 / 既にあれば削除（トグル）
+  function toggleTheme(t: string) {
+    setMultiThemes(prev => {
+      const lines = prev.split('\n').map(s => s.trim()).filter(Boolean)
+      if (lines.includes(t)) return lines.filter(x => x !== t).join('\n')
+      if (lines.length >= MAX_ITEMS) return prev
+      return [...lines, t].join('\n')
+    })
+  }
 
   function patchItem(index: number, patch: Partial<BatchItem>) {
     setItems(prev => prev.map((it, j) => (j === index ? { ...it, ...patch } : it)))
@@ -171,7 +164,7 @@ export default function BatchGeneratePage() {
     <div className="max-w-2xl p-6 lg:p-8">
       <div className="mb-6">
         <h1 className="text-xl font-semibold lg:text-2xl" style={{ color: '#061b31' }}>まとめて生成</h1>
-        <p className="mt-0.5 text-sm text-gray-500">複数の投稿を一度に作成して「投稿一覧」に下書き保存します。</p>
+        <p className="mt-0.5 text-sm text-gray-500">複数のテーマをまとめて「投稿一覧」に下書き保存します。テーマはAIに提案してもらうこともできます。</p>
       </div>
 
       <Card className="space-y-5">
@@ -191,124 +184,87 @@ export default function BatchGeneratePage() {
           )}
         </div>
 
-        {/* モード切替 */}
-        <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">作り方</p>
-          <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
-            {([['count', '1テーマ × 件数'], ['suggest', 'AI提案から選ぶ'], ['multi', '複数テーマ']] as const).map(([m, label]) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                disabled={running}
-                className={cx(
-                  'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
-                  mode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700',
-                )}
-              >
-                {label}
-              </button>
-            ))}
+        {/* テーマ入力（AI提案つき） */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">テーマ（1行に1つ・最大{MAX_ITEMS}件）</p>
+            <button
+              type="button"
+              onClick={suggestThemes}
+              disabled={running || suggestLoading || !selectedAccount}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-[#006F83] transition-colors hover:bg-[#E9F7F9] disabled:opacity-50"
+            >
+              {suggestLoading
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Lightbulb className="h-3.5 w-3.5" />}
+              {themeSuggestions.length > 0 ? '別の案を出す' : 'AIに提案してもらう'}
+            </button>
           </div>
-        </div>
 
-        {/* 入力 */}
-        {mode === 'count' ? (
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">テーマ</p>
-              <Input value={theme} onChange={e => setTheme(e.target.value)} disabled={running} placeholder="例：高卒からの転職ノウハウ" />
-            </div>
-            <div>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">件数</p>
-              <SelectNative value={String(count)} onChange={e => setCount(Number(e.target.value))} disabled={running}>
-                {[2, 3, 4, 5].map(n => <option key={n} value={n}>{n}件</option>)}
-              </SelectNative>
-              <p className="mt-1 text-[11px] text-gray-400">同じテーマで切り口の違う投稿を {count} 件まとめて作ります。</p>
-            </div>
-          </div>
-        ) : mode === 'suggest' ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">AI提案のテーマから選ぶ（最大{MAX_ITEMS}件）</p>
-              <button
-                type="button"
-                onClick={suggestThemes}
-                disabled={running || suggestLoading || !selectedAccount}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-[#006F83] transition-colors hover:bg-[#E9F7F9] disabled:opacity-50"
-              >
-                {suggestLoading
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <Lightbulb className="h-3.5 w-3.5" />}
-                {themeSuggestions.length > 0 ? '別の案を出す' : 'テーマを提案'}
-              </button>
-            </div>
+          <textarea
+            value={multiThemes}
+            onChange={e => setMultiThemes(e.target.value)}
+            disabled={running}
+            rows={5}
+            placeholder={'転職の面接対策\n職務経歴書の書き方\n退職の切り出し方'}
+            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20 disabled:opacity-60"
+          />
 
-            {themeSuggestions.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center">
-                <Lightbulb className="mx-auto mb-2 h-5 w-5 text-gray-300" />
-                <p className="text-xs text-gray-400">
-                  「テーマを提案」を押すと、このアカウント向けのテーマ案が出ます。<br />気に入ったものを選んでまとめて生成できます。
-                </p>
-              </div>
-            ) : (
+          {/* AI提案チップ（クリックで追加/削除） */}
+          {themeSuggestions.length > 0 && (
+            <div className="rounded-lg border border-[#cdeef3] bg-[#F7FCFD] p-3">
+              <p className="mb-2 flex items-center gap-1 text-[11px] font-medium text-[#006F83]">
+                <Sparkles className="h-3 w-3" /> AIの提案（クリックで追加）
+              </p>
               <div className="flex flex-wrap gap-2">
                 {themeSuggestions.map(t => {
-                  const checked = selectedThemes.includes(t)
-                  const atMax = selectedThemes.length >= MAX_ITEMS
+                  const added = previewThemes.includes(t)
+                  const atMax = previewThemes.length >= MAX_ITEMS
                   return (
                     <button
                       key={t}
                       type="button"
-                      disabled={running || (!checked && atMax)}
-                      onClick={() => setSelectedThemes(prev => (checked ? prev.filter(x => x !== t) : [...prev, t]))}
+                      disabled={running || (!added && atMax)}
+                      onClick={() => toggleTheme(t)}
                       className={cx(
                         'inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition-colors',
-                        checked
+                        added
                           ? 'border-[#00A3BF] bg-[#E9F7F9] font-medium text-[#006F83]'
                           : 'border-gray-200 bg-white text-gray-600 hover:border-[#00A3BF]',
-                        !checked && atMax && 'cursor-not-allowed opacity-40',
+                        !added && atMax && 'cursor-not-allowed opacity-40',
                       )}
                     >
-                      {checked && <CheckCircle className="h-3 w-3" />}
+                      {added ? <CheckCircle className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                       {t}
                     </button>
                   )
                 })}
               </div>
-            )}
+            </div>
+          )}
 
-            <p className="text-[11px] text-gray-400">
-              選択中: {selectedThemes.length} / 最大{MAX_ITEMS}件
-              {selectedThemes.length >= MAX_ITEMS && '（上限に達しました）'}
-            </p>
-          </div>
-        ) : (
-          <div>
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">テーマ（1行に1つ・最大{MAX_ITEMS}件）</p>
-            <textarea
-              value={multiThemes}
-              onChange={e => setMultiThemes(e.target.value)}
-              disabled={running}
-              rows={5}
-              placeholder={'転職の面接対策\n職務経歴書の書き方\n退職の切り出し方'}
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20 disabled:opacity-60"
-            />
-            <p className="mt-1 text-[11px] text-gray-400">入力中のテーマ数: {previewThemes.length}（最大{MAX_ITEMS}件まで）</p>
-          </div>
-        )}
+          <p className="text-[11px] text-gray-400">入力中のテーマ数: {previewThemes.length} / 最大{MAX_ITEMS}件</p>
+        </div>
 
         {/* 画像 */}
-        <label className={cx('flex items-center gap-2 text-sm', imageRequired ? 'text-gray-400' : 'text-gray-700')}>
-          <input
-            type="checkbox"
-            checked={effectiveWithImage}
-            disabled={running || imageRequired}
-            onChange={e => setWithImage(e.target.checked)}
-          />
-          各投稿に図解画像も生成する
-          {imageRequired && <span className="text-[11px] text-gray-400">（Instagramは画像必須）</span>}
-        </label>
+        {imageRequired ? (
+          // Instagram は画像必須のため、トグルではなく案内を表示（強制ON）
+          <div className="flex items-start gap-2 rounded-md bg-[#F7FCFD] px-3 py-2.5 text-sm text-[#006F83]">
+            <ImageIcon className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Instagramは画像が必須のため、各投稿に図解画像を自動で生成します。</span>
+          </div>
+        ) : (
+          <label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={withImage}
+              disabled={running}
+              onChange={e => setWithImage(e.target.checked)}
+              className="h-4 w-4 cursor-pointer accent-[#00A3BF] disabled:cursor-not-allowed"
+            />
+            各投稿に図解画像も生成する
+          </label>
+        )}
 
         <div className="border-t border-gray-100 pt-4">
           <Button onClick={runBatch} disabled={!canRun} isLoading={running} loadingText="生成中..." className="w-full gap-2">
