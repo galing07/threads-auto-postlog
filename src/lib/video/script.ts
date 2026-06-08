@@ -382,62 +382,89 @@ export async function generateVideoScript(
   })
   const userPrompt = buildUserPrompt(theme, targetDurationSec, sceneCountMin, sceneCountMax)
 
-  let rawContent: string
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'https://sns-auto-post.vercel.app',
-        'X-Title': 'SNS Auto Post',
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        temperature: 0.8,
-        // 台本(複数シーンの JSON)は長いので十分な枠を明示。
-        // gemini-3.5 系の思考トークン消費を抑えて応答を速く（出力からは除外）。
-        max_tokens: 8192,
-        reasoning: { effort: 'low', exclude: true },
-        // gemini は strict json_schema 未サポートのため json_object を使う
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
+  // gemini は json_object 指定でも、文字列値内に生の改行/制御文字を混ぜる等で
+  // 不正な JSON を返すことが稀にある（=パース失敗）。これは単発の生成ブレなので、
+  // パース/バリデーション失敗時は最大数回まで再生成する（HTTP/認証エラーは即時 throw）。
+  // 2回目以降は「厳密な JSON を返せ」という補正指示を user プロンプトに足す。
+  const MAX_ATTEMPTS = 3
+  let lastError: ScriptGenerationError | null = null
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '')
-      console.error('[OpenRouter script]', sanitizeProviderHttpError(res.status, errText))
-      throw new ScriptGenerationError(`OpenRouter 呼び出しに失敗しました (HTTP ${res.status})`)
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const retryNote = attempt > 1
+      ? '\n\n【最重要・再送】前回の応答は JSON として解析できませんでした。説明文・コードフェンス（```）・前置きは一切付けず、厳密に正しい JSON オブジェクトのみを返してください。文字列値の中の改行は必ず \\n にエスケープし、制御文字や末尾カンマを含めないこと。'
+      : ''
+
+    let rawContent: string
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'https://sns-auto-post.vercel.app',
+          'X-Title': 'SNS Auto Post',
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          temperature: 0.8,
+          // 台本(複数シーンの JSON)は長いので十分な枠を明示。
+          // gemini-3.5 系の思考トークン消費を抑えて応答を速く（出力からは除外）。
+          max_tokens: 8192,
+          reasoning: { effort: 'low', exclude: true },
+          // gemini は strict json_schema 未サポートのため json_object を使う
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt + retryNote },
+          ],
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        console.error('[OpenRouter script]', sanitizeProviderHttpError(res.status, errText))
+        throw new ScriptGenerationError(`OpenRouter 呼び出しに失敗しました (HTTP ${res.status})`)
+      }
+
+      const json = await res.json() as {
+        choices?: Array<{ message?: { content?: string } }>
+      }
+      rawContent = json.choices?.[0]?.message?.content ?? ''
+      if (!rawContent) {
+        throw new ScriptGenerationError('OpenRouter 応答が空です')
+      }
+    } catch (err) {
+      if (err instanceof ScriptGenerationError || err instanceof MissingApiKeyError) {
+        throw err
+      }
+      const message = err instanceof Error ? err.message : 'unknown'
+      throw new ScriptGenerationError(`OpenRouter 呼び出しに失敗しました: ${message}`, err)
     }
 
-    const json = await res.json() as {
-      choices?: Array<{ message?: { content?: string } }>
+    // パース＆バリデーション。失敗（不正 JSON / 制約違反）は再生成で救えるのでリトライ。
+    const parsed = extractJsonObject(rawContent)
+    if (parsed === null) {
+      lastError = new ScriptGenerationError(
+        `OpenRouter 応答 JSON のパースに失敗しました: ${snippet(rawContent)}`,
+      )
+      console.error(`[OpenRouter script] parse failed (attempt ${attempt}/${MAX_ATTEMPTS})`)
+      continue
     }
-    rawContent = json.choices?.[0]?.message?.content ?? ''
-    if (!rawContent) {
-      throw new ScriptGenerationError('OpenRouter 応答が空です')
-    }
-  } catch (err) {
-    if (err instanceof ScriptGenerationError || err instanceof MissingApiKeyError) {
+
+    try {
+      // maxCharsPerScene はプロンプト指示 (perSceneChars) に少し余裕を持たせた上限。
+      // AI の自然なブレは許容しつつ、暴走的な長文だけ確実に切る。
+      return validateScriptResponse(parsed, rawContent, perSceneChars + 15)
+    } catch (err) {
+      if (err instanceof ScriptGenerationError) {
+        lastError = err
+        console.error(`[OpenRouter script] validation failed (attempt ${attempt}/${MAX_ATTEMPTS})`)
+        continue
+      }
       throw err
     }
-    const message = err instanceof Error ? err.message : 'unknown'
-    throw new ScriptGenerationError(`OpenRouter 呼び出しに失敗しました: ${message}`, err)
   }
 
-  const parsed = extractJsonObject(rawContent)
-  if (parsed === null) {
-    throw new ScriptGenerationError(
-      `OpenRouter 応答 JSON のパースに失敗しました: ${snippet(rawContent)}`,
-    )
-  }
-
-  // maxCharsPerScene はプロンプト指示 (perSceneChars) に少し余裕を持たせた上限。
-  // AI の自然なブレは許容しつつ、暴走的な長文だけ確実に切る。
-  return validateScriptResponse(parsed, rawContent, perSceneChars + 15)
+  throw lastError ?? new ScriptGenerationError('スクリプト生成に失敗しました')
 }
