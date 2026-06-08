@@ -146,6 +146,17 @@ export async function createInstagramPost(
     { method: 'POST', body: { image_url: imageUrl, caption } },
   )
 
+  // 画像コンテナは作成直後は公開可能になっていない（IG が image_url を取得・処理する）。
+  // FINISHED を待たずに media_publish すると HTTP 400
+  // 「The media is not ready for publishing, please wait for a moment」になるため、
+  // status_code=FINISHED までポーリングしてから公開する（小さい画像は即 FINISHED、
+  // 実画像は数秒かかる）。
+  await waitForContainerReady(container.id, accessToken, {
+    timeoutMs: IMAGE_CONTAINER_TIMEOUT_MS,
+    intervalMs: IMAGE_CONTAINER_INTERVAL_MS,
+    label: '画像',
+  })
+
   const published = await igRequest<{ id: string }>(
     `/${encodeURIComponent(igUserId)}/media_publish`,
     accessToken,
@@ -218,7 +229,11 @@ export async function createInstagramReelPost(
   }
 
   // 公開可能状態まで待つ (Reels は処理に時間がかかる)
-  await waitForReelsContainerReady(container.id, accessToken)
+  await waitForContainerReady(container.id, accessToken, {
+    timeoutMs: REELS_POLL_TIMEOUT_MS,
+    intervalMs: REELS_POLL_INTERVAL_MS,
+    label: 'Reels',
+  })
 
   const published = await igRequest<{ id: string }>(
     `/${encodeURIComponent(igUserId)}/media_publish`,
@@ -231,22 +246,29 @@ export async function createInstagramReelPost(
 
 const REELS_POLL_INTERVAL_MS = 5_000
 const REELS_POLL_TIMEOUT_MS = 5 * 60_000 // 5 分以内に FINISHED にならなければ諦める
+// 画像コンテナは動画より遥かに速く処理される。短い間隔・短いタイムアウトで待つ
+// （ルートの maxDuration に収まる範囲。実画像は通常数秒で FINISHED）。
+const IMAGE_CONTAINER_INTERVAL_MS = 2_000
+const IMAGE_CONTAINER_TIMEOUT_MS = 50_000
 
 /**
- * TODO(webhook-migration): この 5 分ポーリングはサーバ実行時間と費用の両面で
- * 重い。本来は Instagram Graph API の Webhooks (media field の status_code
- * 通知) を購読し、コンテナ作成時に containerId を永続化 → webhook 受信時に
- * media_publish を発火する非同期フローに置き換えるべき。
- * 中間 containerId は createInstagramReelPost の onContainerCreated コールバックで
- * 既に永続化可能なので、移行時はこのポーリングを撤去し webhook ハンドラ
- * (POST /api/webhooks/instagram) を新設するだけで済む。
+ * メディアコンテナ (画像 / Reels) が公開可能 (status_code=FINISHED) になるまで待つ。
+ * 待たずに media_publish すると HTTP 400「The media is not ready for publishing」になる。
+ *
+ * TODO(webhook-migration): この同期ポーリングはサーバ実行時間と費用の両面で重い。
+ * 本来は Instagram Graph API の Webhooks (media field の status_code 通知) を購読し、
+ * コンテナ作成時に containerId を永続化 → webhook 受信時に media_publish を発火する
+ * 非同期フローに置き換えるべき。中間 containerId は createInstagramReelPost の
+ * onContainerCreated で既に永続化可能なので、移行時はこのポーリングを撤去し webhook
+ * ハンドラ (POST /api/webhooks/instagram) を新設するだけで済む。
  */
-async function waitForReelsContainerReady(
+async function waitForContainerReady(
   containerId: string,
   accessToken: string,
+  opts: { timeoutMs: number; intervalMs: number; label: string },
 ): Promise<void> {
   const start = Date.now()
-  while (Date.now() - start < REELS_POLL_TIMEOUT_MS) {
+  while (Date.now() - start < opts.timeoutMs) {
     const data = await igRequest<{ status_code?: string; status?: string }>(
       `/${encodeURIComponent(containerId)}?fields=status_code,status`,
       accessToken,
@@ -254,11 +276,11 @@ async function waitForReelsContainerReady(
     const code = data.status_code ?? data.status ?? ''
     if (code === 'FINISHED') return
     if (code === 'ERROR' || code === 'EXPIRED') {
-      throw new Error(`Instagram Reels コンテナの処理に失敗しました (status=${code})`)
+      throw new Error(`Instagram ${opts.label} コンテナの処理に失敗しました (status=${code})`)
     }
-    await new Promise((resolve) => setTimeout(resolve, REELS_POLL_INTERVAL_MS))
+    await new Promise((resolve) => setTimeout(resolve, opts.intervalMs))
   }
-  throw new Error('Instagram Reels コンテナの処理が制限時間内に完了しませんでした')
+  throw new Error(`Instagram ${opts.label} コンテナの処理が制限時間内に完了しませんでした`)
 }
 
 /**

@@ -4,6 +4,10 @@ import { publishPost } from '@/lib/platforms/publishers'
 import { PublishError } from '@/lib/platforms/errors'
 import type { Account } from '@/types/database'
 
+// Instagram 画像/Reels コンテナが公開可能になるまでのポーリングに余裕を持たせる
+// （即時 media_publish は「media is not ready」400 になるため待つ）。
+export const maxDuration = 60
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
