@@ -37,6 +37,14 @@ function localNowForInput(): string {
   return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 16)
 }
 
+/** ISO(UTC) を datetime-local 入力欄用のローカル時刻文字列に変換（予約時刻の編集プリフィル用）。 */
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const off = d.getTimezoneOffset()
+  return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 16)
+}
+
 // 投稿先プラットフォームのバッジ（どのSNSに投稿するか/したかを一目で分かるように）
 const PLATFORM_BADGE: Record<string, { label: string; cls: string }> = {
   threads:   { label: 'Threads',   cls: 'bg-gray-900 text-white' },
@@ -94,8 +102,10 @@ function DraftCard({
   // account_id 未割当の post に対する選択中アカウント。
   // 初期値を空にすることで「最初の1つに暗黙投稿」事故を防ぐ → 明示的に選ぶまで投稿ボタン disabled。
   const [pickerAccountId, setPickerAccountId] = useState<string>('')
-  // 予約日時（datetime-local の値・ローカル時刻文字列）
-  const [scheduleAt, setScheduleAt] = useState<string>('')
+  // 予約日時（datetime-local の値・ローカル時刻文字列）。予約済みカードは現在の予約時刻をプリフィル。
+  const [scheduleAt, setScheduleAt] = useState<string>(
+    post.status === 'scheduled' && post.scheduled_at ? isoToLocalInput(post.scheduled_at) : '',
+  )
   // 投稿/予約に使う実効アカウント（既存 account_id 優先、無ければ選択中）
   const effectiveAccountId = post.account_id ?? (pickerAccountId || '')
 
@@ -198,6 +208,14 @@ function DraftCard({
             {displayText}
           </p>
 
+          {/* 失敗理由（なぜ失敗したか分かるように。再投稿はアクション行の「今すぐ投稿」から） */}
+          {post.status === 'failed' && post.error_message && (
+            <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-600">
+              <span className="font-medium">投稿に失敗しました：</span>
+              <span className="break-words">{post.error_message}</span>
+            </div>
+          )}
+
           {/* 展開ボタン & アクション */}
           <div className="mt-2 flex items-center gap-3">
             {isLong && (
@@ -212,13 +230,35 @@ function DraftCard({
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              {/* 予約済み: 予約時刻 + 取消 */}
+              {/* 予約済み: 予約時刻 + 時刻変更 + 取消 */}
               {post.status === 'scheduled' && (
                 <>
                   <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#006F83]">
                     <Clock className="h-3.5 w-3.5" />
                     {post.scheduled_at ? `${formatDate(post.scheduled_at)} に投稿予定` : '予約済み'}
                   </span>
+                  <input
+                    type="datetime-local"
+                    value={scheduleAt}
+                    min={localNowForInput()}
+                    onChange={(e) => setScheduleAt(e.target.value)}
+                    aria-label="予約日時を変更"
+                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-hidden focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const iso = localInputToIso(scheduleAt)
+                      if (!iso) return
+                      onSchedule(post.id, iso) // 予約中→再予約（schedule API が scheduled でも再設定を許可）
+                    }}
+                    disabled={scheduling || !scheduleAt || (!!post.scheduled_at && isoToLocalInput(post.scheduled_at) === scheduleAt)}
+                    isLoading={scheduling}
+                    loadingText="変更中..."
+                    className="gap-1 py-1 px-2.5 text-xs"
+                  >
+                    時刻を変更
+                  </Button>
                   <button
                     onClick={() => onCancelSchedule(post.id)}
                     disabled={scheduling}
@@ -483,9 +523,18 @@ export default function DraftsPage() {
     }
   }
 
-  const filtered = filter === 'all' || filter === 'video'
-    ? posts
-    : posts.filter(p => p.status === filter)
+  const filtered = (() => {
+    const base = filter === 'all' || filter === 'video'
+      ? posts
+      : posts.filter(p => p.status === filter)
+    // 予約タブは「投稿予定が近い順」に並べる（作成日時順だと次に何がいつ出るか分かりにくい）
+    if (filter === 'scheduled') {
+      return [...base].sort(
+        (a, b) => new Date(a.scheduled_at ?? 0).getTime() - new Date(b.scheduled_at ?? 0).getTime(),
+      )
+    }
+    return base
+  })()
 
   const counts = {
     all:       posts.length,
