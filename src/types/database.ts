@@ -1,5 +1,5 @@
 export type Platform = 'threads' | 'instagram' | 'x' | 'tiktok' | 'youtube'
-export type PostStatus = 'draft' | 'publishing' | 'posted' | 'failed'
+export type PostStatus = 'draft' | 'scheduled' | 'publishing' | 'posted' | 'failed'
 export type LogAction = 'generated' | 'approved' | 'posted' | 'failed'
 
 export type VideoStatus =
@@ -11,7 +11,7 @@ export type VideoStatus =
   | 'ready'
   | 'failed'
 
-export type PublishStatus = 'unpublished' | 'publishing' | 'published' | 'publish_failed'
+export type PublishStatus = 'unpublished' | 'scheduled' | 'publishing' | 'published' | 'publish_failed'
 
 export type GenerationMode = 'remotion' | 'heygen_avatar'
 export type VoiceSource = 'elevenlabs' | 'heygen'
@@ -62,6 +62,10 @@ export interface Post {
   platform_post_ids: string[] | null
   error_message: string | null
   summary: string | null
+  // 予約投稿（20260609_scheduled_posting.sql）
+  scheduled_at: string | null
+  publish_attempts: number
+  next_attempt_at: string | null
   created_at: string
   updated_at: string
 }
@@ -130,6 +134,10 @@ export interface Video {
   generation_started_at: string | null
   published_at: string | null
   error_message: string | null
+  // 予約公開（20260609_scheduled_posting.sql）。フェーズ2のcronで使用。
+  scheduled_at: string | null
+  publish_attempts: number
+  next_attempt_at: string | null
   created_at: string
   updated_at: string
 }

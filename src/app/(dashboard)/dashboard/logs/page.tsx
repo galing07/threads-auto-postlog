@@ -11,6 +11,7 @@ import type { PostStatus, PostWithAccount } from '@/types/database'
 
 const STATUS_CONFIG: Record<PostStatus, { label: string; cls: string; Icon: typeof PenLine }> = {
   draft:      { label: '下書き',   cls: 'bg-gray-100 text-gray-600',    Icon: PenLine },
+  scheduled:  { label: '予約済み', cls: 'bg-[#E9F7F9] text-[#006F83]',  Icon: Send },
   publishing: { label: '投稿中',   cls: 'bg-blue-50 text-blue-600',     Icon: Loader2 },
   posted:     { label: '投稿済み', cls: 'bg-green-50 text-green-700',   Icon: CheckCircle },
   failed:     { label: 'エラー',   cls: 'bg-red-50 text-red-600',       Icon: AlertCircle },

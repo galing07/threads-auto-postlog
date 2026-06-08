@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   FileText, Send, Trash2, User, ImageIcon, RefreshCw,
-  CheckCircle, ChevronDown, ChevronUp, X, Video as VideoIcon, Plus,
+  CheckCircle, ChevronDown, ChevronUp, X, Video as VideoIcon, Plus, Clock,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -17,9 +17,24 @@ import type { Account, Post, Video } from '@/types/database'
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   draft:      { label: '下書き',   cls: 'bg-gray-100 text-gray-600' },
+  scheduled:  { label: '予約',     cls: 'bg-[#E9F7F9] text-[#006F83]' },
   publishing: { label: '投稿中',   cls: 'bg-blue-50 text-blue-600' },
   posted:     { label: '投稿済み', cls: 'bg-green-50 text-green-700' },
   failed:     { label: 'エラー',   cls: 'bg-red-50 text-red-600' },
+}
+
+/** datetime-local の値(ローカル時刻)を ISO(UTC) に変換。空なら null。 */
+function localInputToIso(v: string): string | null {
+  if (!v) return null
+  const d = new Date(v) // "YYYY-MM-DDTHH:mm" はローカル時刻として解釈される
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+/** datetime-local の min 属性用に「今(ローカル)」を YYYY-MM-DDTHH:mm で返す。 */
+function localNowForInput(): string {
+  const d = new Date()
+  const off = d.getTimezoneOffset()
+  return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 16)
 }
 
 // 投稿先プラットフォームのバッジ（どのSNSに投稿するか/したかを一目で分かるように）
@@ -52,15 +67,21 @@ function DraftCard({
   post,
   accounts,
   onPublish,
+  onSchedule,
+  onCancelSchedule,
   onDelete,
   publishing,
+  scheduling,
   deleting,
 }: {
   post: Post
   accounts: AccountOption[]
   onPublish: (id: string, accountId?: string) => void
+  onSchedule: (id: string, scheduledAtIso: string, accountId?: string) => void
+  onCancelSchedule: (id: string) => void
   onDelete: (id: string) => void
   publishing: boolean
+  scheduling: boolean
   deleting: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -69,6 +90,10 @@ function DraftCard({
   // account_id 未割当の post に対する選択中アカウント。
   // 初期値を空にすることで「最初の1つに暗黙投稿」事故を防ぐ → 明示的に選ぶまで投稿ボタン disabled。
   const [pickerAccountId, setPickerAccountId] = useState<string>('')
+  // 予約日時（datetime-local の値・ローカル時刻文字列）
+  const [scheduleAt, setScheduleAt] = useState<string>('')
+  // 投稿/予約に使う実効アカウント（既存 account_id 優先、無ければ選択中）
+  const effectiveAccountId = post.account_id ?? (pickerAccountId || '')
 
   const { label, cls } = STATUS_CONFIG[post.status] ?? STATUS_CONFIG.draft
   // 投稿先アカウント（account_id → accounts から解決）。下書き=「ここに投稿する」、投稿済み=「ここに投稿した」。
@@ -183,54 +208,83 @@ function DraftCard({
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              {(post.status === 'draft' || post.status === 'failed') && post.account_id && (
-                <Button
-                  onClick={() => onPublish(post.id)}
-                  disabled={publishing}
-                  isLoading={publishing}
-                  loadingText="投稿中..."
-                  className="gap-1 py-1 px-2.5 text-xs"
-                >
-                  <Send className="h-3 w-3" />
-                  今すぐ投稿
-                </Button>
-              )}
-              {/* account_id 未割当: アカウント選択して投稿 */}
-              {(post.status === 'draft' || post.status === 'failed') && !post.account_id && (
+              {/* 予約済み: 予約時刻 + 取消 */}
+              {post.status === 'scheduled' && (
                 <>
-                  {accounts.length === 0 ? (
-                    <span className="text-[11px] text-amber-600">
-                      投稿先アカウントを先に追加してください
-                    </span>
-                  ) : (
-                    <>
-                      <select
-                        value={pickerAccountId}
-                        onChange={(e) => setPickerAccountId(e.target.value)}
-                        aria-label="投稿先アカウント"
-                        className="appearance-none rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-hidden focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
-                      >
-                        <option value="">アカウントを選択</option>
-                        {accounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}（{a.platform}）
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        onClick={() => onPublish(post.id, pickerAccountId)}
-                        disabled={publishing || !pickerAccountId}
-                        isLoading={publishing}
-                        loadingText="投稿中..."
-                        className="gap-1 py-1 px-2.5 text-xs"
-                      >
-                        <Send className="h-3 w-3" />
-                        投稿
-                      </Button>
-                    </>
-                  )}
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#006F83]">
+                    <Clock className="h-3.5 w-3.5" />
+                    {post.scheduled_at ? `${formatDate(post.scheduled_at)} に投稿予定` : '予約済み'}
+                  </span>
+                  <button
+                    onClick={() => onCancelSchedule(post.id)}
+                    disabled={scheduling}
+                    className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-500 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50"
+                  >
+                    予約取消
+                  </button>
                 </>
               )}
+
+              {/* 下書き / 失敗: アカウント未割当なら選択 */}
+              {(post.status === 'draft' || post.status === 'failed') && !post.account_id && accounts.length === 0 && (
+                <span className="text-[11px] text-amber-600">投稿先アカウントを先に追加してください</span>
+              )}
+              {(post.status === 'draft' || post.status === 'failed') && !post.account_id && accounts.length > 0 && (
+                <select
+                  value={pickerAccountId}
+                  onChange={(e) => setPickerAccountId(e.target.value)}
+                  aria-label="投稿先アカウント"
+                  className="appearance-none rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-hidden focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
+                >
+                  <option value="">アカウントを選択</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}（{a.platform}）
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* 下書き / 失敗: 日時ピッカー + 予約 + 今すぐ投稿（アカウント確定後に有効） */}
+              {(post.status === 'draft' || post.status === 'failed') && (post.account_id || accounts.length > 0) && (
+                <>
+                  <input
+                    type="datetime-local"
+                    value={scheduleAt}
+                    min={localNowForInput()}
+                    onChange={(e) => setScheduleAt(e.target.value)}
+                    aria-label="予約日時"
+                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-hidden focus:border-[#00A3BF] focus:ring-2 focus:ring-[#00A3BF]/20"
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const iso = localInputToIso(scheduleAt)
+                      if (!iso || !effectiveAccountId) return
+                      onSchedule(post.id, iso, post.account_id ? undefined : effectiveAccountId)
+                    }}
+                    disabled={scheduling || publishing || !scheduleAt || !effectiveAccountId}
+                    isLoading={scheduling}
+                    loadingText="予約中..."
+                    className="gap-1 py-1 px-2.5 text-xs"
+                  >
+                    <Clock className="h-3 w-3" />
+                    予約
+                  </Button>
+                  <Button
+                    onClick={() => onPublish(post.id, post.account_id ? undefined : effectiveAccountId)}
+                    disabled={publishing || scheduling || !effectiveAccountId}
+                    isLoading={publishing}
+                    loadingText="投稿中..."
+                    className="gap-1 py-1 px-2.5 text-xs"
+                  >
+                    <Send className="h-3 w-3" />
+                    今すぐ投稿
+                  </Button>
+                </>
+              )}
+
+              {/* 削除（投稿済み以外） */}
               {post.status !== 'posted' && (
                 <button
                   onClick={() => onDelete(post.id)}
@@ -262,9 +316,10 @@ export default function DraftsPage() {
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState<string | null>(null)
+  const [scheduling, setScheduling] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [videos, setVideos] = useState<VideoListItem[]>([])
-  const [filter, setFilter] = useState<'all' | 'draft' | 'posted' | 'failed' | 'video'>('all')
+  const [filter, setFilter] = useState<'all' | 'draft' | 'scheduled' | 'posted' | 'failed' | 'video'>('all')
 
   async function load(signal?: AbortSignal) {
     setLoading(true)
@@ -342,6 +397,56 @@ export default function DraftsPage() {
     }
   }
 
+  async function handleSchedule(postId: string, scheduledAtIso: string, accountId?: string) {
+    setScheduling(postId)
+    try {
+      const res = await fetch(`/api/posts/${postId}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledAt: scheduledAtIso, ...(accountId ? { accountId } : {}) }),
+      })
+      const data = await res.json().catch(() => ({})) as { error?: string; scheduled_at?: string }
+      if (!res.ok) {
+        toast.error(data.error ?? '予約に失敗しました')
+        return
+      }
+      toast.success('予約しました')
+      setPosts(prev => prev.map(p =>
+        p.id === postId
+          ? { ...p, status: 'scheduled', scheduled_at: data.scheduled_at ?? scheduledAtIso, account_id: accountId ?? p.account_id }
+          : p,
+      ))
+    } catch {
+      toast.error('予約に失敗しました')
+    } finally {
+      setScheduling(null)
+    }
+  }
+
+  async function handleCancelSchedule(postId: string) {
+    setScheduling(postId)
+    try {
+      const res = await fetch(`/api/posts/${postId}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledAt: null }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        toast.error(data.error ?? '予約の取消に失敗しました')
+        return
+      }
+      toast.success('予約を取り消しました')
+      setPosts(prev => prev.map(p =>
+        p.id === postId ? { ...p, status: 'draft', scheduled_at: null } : p,
+      ))
+    } catch {
+      toast.error('予約の取消に失敗しました')
+    } finally {
+      setScheduling(null)
+    }
+  }
+
   async function handleDelete(postId: string) {
     const ok = await confirm({
       title: '投稿を削除',
@@ -368,11 +473,12 @@ export default function DraftsPage() {
     : posts.filter(p => p.status === filter)
 
   const counts = {
-    all:    posts.length,
-    draft:  posts.filter(p => p.status === 'draft').length,
-    posted: posts.filter(p => p.status === 'posted').length,
-    failed: posts.filter(p => p.status === 'failed').length,
-    video:  videos.length,
+    all:       posts.length,
+    draft:     posts.filter(p => p.status === 'draft').length,
+    scheduled: posts.filter(p => p.status === 'scheduled').length,
+    posted:    posts.filter(p => p.status === 'posted').length,
+    failed:    posts.filter(p => p.status === 'failed').length,
+    video:     videos.length,
   }
 
   return (
@@ -396,7 +502,7 @@ export default function DraftsPage() {
 
       {/* Filter tabs */}
       <div className="mb-4 flex gap-1 rounded-lg bg-gray-100 p-1">
-        {(['all', 'draft', 'posted', 'failed', 'video'] as const).map(f => (
+        {(['all', 'draft', 'scheduled', 'posted', 'failed', 'video'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -464,8 +570,11 @@ export default function DraftsPage() {
               post={post}
               accounts={accounts}
               onPublish={handlePublish}
+              onSchedule={handleSchedule}
+              onCancelSchedule={handleCancelSchedule}
               onDelete={handleDelete}
               publishing={publishing === post.id}
+              scheduling={scheduling === post.id}
               deleting={deleting === post.id}
             />
           ))}
