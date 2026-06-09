@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { publishVideo, type VideoPublishOptions as PublisherOptions } from '@/lib/platforms/publishers'
 import { resolveAssetUrl } from '@/lib/video/signed-urls'
+import { sanitizeProviderError } from '@/lib/ai/sanitize-error'
 import type { Account, Platform, Video } from '@/types/database'
 
 // 公開時に発行する signed URL の有効期限（秒）。TikTok/YouTube が pull する余裕を持たせる。
@@ -221,14 +222,17 @@ export async function publishVideoToAccount({
       url: result.publishedUrl ?? null,
     })
   } catch (e) {
-    const internalMessage = e instanceof Error ? e.message : 'unknown'
-    console.error('[videos/publish]', platform, videoId, internalMessage)
+    // AI生成系（generate/text 等）と同じく sanitizeProviderError を通してから
+    // ログ・DB に残す。OAuth トークン断片などが console.error / videos.error_message に
+    // 混入するのを防ぐ多層防御。
+    const safeMessage = sanitizeProviderError(e)
+    console.error('[videos/publish]', platform, videoId, safeMessage)
 
     await supabase
       .from('videos')
       .update({
         publish_status: 'publish_failed',
-        error_message: internalMessage.slice(0, 500),
+        error_message: safeMessage.slice(0, 500),
       })
       .eq('id', videoId)
 

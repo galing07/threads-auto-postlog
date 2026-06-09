@@ -360,7 +360,7 @@ export function PostTypeGrid({
         <SectionLabel>投稿の型</SectionLabel>
         <span className="text-xs text-gray-400">任意</span>
       </div>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {options.map(t => {
           const selected = value === t.value
           return (

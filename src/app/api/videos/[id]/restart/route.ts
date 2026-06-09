@@ -7,7 +7,20 @@ import { videoCapability } from '@/lib/runtime-env'
 /**
  * failed 状態の動画を再開する。draft に戻して pipeline を再投入。
  * 既存の scenes / image_url / audio_url は残るため、未完了の step のみ再走する。
+ *
+ * failed に加えて、generating_* / rendering のまま固まった（stuck）動画も再開対象。
+ * restartFailedVideo が failed→draft の CAS に失敗した場合は recoverStuckVideo で
+ * 「閾値(30分)以上経過した stuck 行」だけを draft に戻す（正常進行中には触れない）。
  */
+// 再開を許可するステータス（failed + 生成中で固まりうるもの）。
+// 正常進行中(<30分)の stuck は restartFailedVideo 側で弾かれ 409 を返す。
+const RESTARTABLE_STATUSES = [
+  'failed',
+  'generating_script',
+  'generating_images',
+  'generating_voice',
+  'rendering',
+]
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -27,8 +40,8 @@ export async function POST(
       .maybeSingle()
     if (lookupErr) throw lookupErr
     if (!video) return NextResponse.json({ error: '動画が見つかりません' }, { status: 404 })
-    if (video.status !== 'failed') {
-      return NextResponse.json({ error: 'failed 状態の動画のみ再開できます' }, { status: 400 })
+    if (!RESTARTABLE_STATUSES.includes(video.status)) {
+      return NextResponse.json({ error: 'failed または生成が停止した動画のみ再開できます' }, { status: 400 })
     }
 
     // 実行環境の判定はモードに依存する（HeyGen はクラウドレンダで Vercel 可、

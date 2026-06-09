@@ -20,9 +20,17 @@ interface ThreadsPostResult {
 }
 
 export class ThreadsAuthError extends Error {
-  constructor(message = 'Threads access token expired or invalid') {
+  /**
+   * container 作成後・threads_publish 前後で発生した auth エラーの場合、既に作成済みの
+   * コンテナ ID を載せる。呼び出し側（publishers.ts）はこれを使い、再試行時に
+   * コンテナを作り直さず threads_publish のみ再実行できる（孤立コンテナの量産を防ぐ）。
+   */
+  containerId?: string
+
+  constructor(message = 'Threads access token expired or invalid', containerId?: string) {
     super(message)
     this.name = 'ThreadsAuthError'
+    this.containerId = containerId
   }
 }
 
@@ -64,31 +72,65 @@ function assertSafeImageUrl(imageUrl: string) {
   }
 }
 
+interface CreatePostExtras {
+  /**
+   * 既存のコンテナ ID。指定された場合はコンテナ作成をスキップし、threads_publish
+   * のみ実行する（前回の publish 失敗で作成済みのコンテナを再利用するため）。
+   */
+  containerId?: string
+  /**
+   * コンテナ作成直後（threads_publish 前）に呼ばれるコールバック。呼び出し元は
+   * ここで containerId を保持し、再試行時に再利用できるようにする。
+   * （Instagram Reels の onContainerCreated と同じ意図）
+   */
+  onContainerCreated?: (containerId: string) => void
+}
+
 export async function createThreadsPost(
   credentials: ThreadsCredentials,
   { text, imageUrl }: CreatePostOptions,
+  extras: CreatePostExtras = {},
 ): Promise<ThreadsPostResult> {
   const { accessToken, userId } = credentials
+  const { containerId: existingContainerId, onContainerCreated } = extras
 
   if (imageUrl) assertSafeImageUrl(imageUrl)
 
-  const mediaType = imageUrl ? 'IMAGE' : 'TEXT'
-  const containerBody: Record<string, string> = { media_type: mediaType, text }
-  if (imageUrl) containerBody.image_url = imageUrl
+  // 既存コンテナがあれば作成をスキップして再利用する（孤立コンテナの量産を防ぐ）。
+  let containerId: string
+  if (existingContainerId) {
+    containerId = existingContainerId
+  } else {
+    const mediaType = imageUrl ? 'IMAGE' : 'TEXT'
+    const containerBody: Record<string, string> = { media_type: mediaType, text }
+    if (imageUrl) containerBody.image_url = imageUrl
 
-  const container = await threadsRequest<{ id: string }>(
-    `/${encodeURIComponent(userId)}/threads`,
-    accessToken,
-    { method: 'POST', body: containerBody },
-  )
+    const container = await threadsRequest<{ id: string }>(
+      `/${encodeURIComponent(userId)}/threads`,
+      accessToken,
+      { method: 'POST', body: containerBody },
+    )
+    containerId = container.id
+    // 公開前に containerId を呼び出し元へ伝える。publish が auth エラーで落ちても
+    // 呼び出し元はこの ID で threads_publish のみ再試行できる。
+    onContainerCreated?.(containerId)
+  }
 
-  const published = await threadsRequest<{ id: string }>(
-    `/${encodeURIComponent(userId)}/threads_publish`,
-    accessToken,
-    { method: 'POST', body: { creation_id: container.id } },
-  )
-
-  return { id: published.id }
+  try {
+    const published = await threadsRequest<{ id: string }>(
+      `/${encodeURIComponent(userId)}/threads_publish`,
+      accessToken,
+      { method: 'POST', body: { creation_id: containerId } },
+    )
+    return { id: published.id }
+  } catch (e) {
+    // threads_publish が auth エラーで失敗した場合、作成済みコンテナ ID を載せ直して
+    // throw する。呼び出し元はトークン更新後にコンテナを再利用して再試行する。
+    if (e instanceof ThreadsAuthError) {
+      throw new ThreadsAuthError(e.message, containerId)
+    }
+    throw e
+  }
 }
 
 export async function getThreadsProfile(accessToken: string, userId: string) {

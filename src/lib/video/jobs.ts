@@ -10,7 +10,9 @@ import { runVideoPipeline, type PipelineRunOptions } from '@/lib/video/pipeline'
  * 環境で差し替えられるようにする。
  *
  * バックエンド選択:
- *   1. process.env.TRIGGER_PUBLIC_API_KEY が設定されている  → Trigger.dev (TODO、未実装時は既定にフォールバック)
+ *   1. process.env.TRIGGER_PUBLIC_API_KEY が設定されている  → Trigger.dev は【未実装】。
+ *      env var が設定されていても実際の委譲は行わず、警告ログを残した上で
+ *      常に既定バックエンド (after / inline) にフォールバックする。
  *   2. process.env.VERCEL === '1' (Vercel Functions)        → after() バックエンド
  *   3. それ以外 (ローカル / 長寿命プロセス)                  → setImmediate (inline)
  *
@@ -41,6 +43,9 @@ function defaultBackend(): JobBackend {
 }
 
 function selectBackend(): JobBackend {
+  // 注意: TRIGGER_PUBLIC_API_KEY が設定されていても Trigger.dev は未実装のため、
+  // triggerDevBackend は実際には委譲せず常に defaultBackend() にフォールバックする
+  // （警告ログ付き）。env var を「有効化スイッチ」と誤認しないこと。
   if (process.env.TRIGGER_PUBLIC_API_KEY) {
     return triggerDevBackend
   }
@@ -95,12 +100,13 @@ const vercelAfterBackend: JobBackend = {
 }
 
 // ---------------------------------------------------------------------------
-// Trigger.dev (TODO: 本番統合)
+// Trigger.dev (【未実装】: 常に既定バックエンドへフォールバック)
 // ---------------------------------------------------------------------------
 
 const triggerDevBackend: JobBackend = {
   name: 'trigger-dev',
   async enqueue(videoId: string, opts: PipelineRunOptions): Promise<void> {
+    // 【未実装】Trigger.dev への委譲は行わない。常に既定バックエンドへフォールバックする。
     // TODO(prod): Trigger.dev SDK を統合する。
     //
     // 想定実装 (SDK 未インストール / 環境変数のみで stub):
@@ -108,7 +114,7 @@ const triggerDevBackend: JobBackend = {
     //   import { tasks } from '@trigger.dev/sdk/v3'
     //   await tasks.trigger('run-video-pipeline', { videoId, ...opts })
     //
-    // それまでは環境に応じた既定バックエンド (after / inline) にフォールバック。
+    // それまでは（= 現状は常に）環境に応じた既定バックエンド (after / inline) にフォールバック。
     process.stderr.write(
       `[video-pipeline] TRIGGER_PUBLIC_API_KEY is set but Trigger.dev integration is not yet implemented. Falling back to ${defaultBackend().name}. videoId=${videoId}\n`,
     )

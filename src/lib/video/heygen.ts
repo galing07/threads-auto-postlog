@@ -76,15 +76,21 @@ async function fetchHeyGenKey(userId: string): Promise<string | null> {
       .select('heygen_key')
       .eq('user_id', userId)
       .maybeSingle()
-    if (!error && data) {
+    if (error) {
+      // DB の一時エラーを「キー未登録」と取り違えると誤った案内になるのでログを残す。
+      console.error('[heygen] key fetch DB error', error.message)
+      return null
+    }
+    if (data) {
       const raw = (data as { heygen_key?: string | null }).heygen_key
       if (typeof raw === 'string') {
         const decrypted = decryptSecret(raw)?.trim()
         if (decrypted) return decrypted
       }
     }
-  } catch {
-    // DB 取得失敗時は null を返す (env フォールバックは廃止)。
+  } catch (e) {
+    // DB 取得失敗時は null を返す (env フォールバックは廃止)。原因はログに残す。
+    console.error('[heygen] key fetch failed', e instanceof Error ? e.message : 'unknown')
   }
   return null
 }

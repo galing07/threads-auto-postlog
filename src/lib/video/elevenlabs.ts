@@ -84,11 +84,14 @@ export class ElevenLabsAuthError extends Error {
 }
 
 export class ElevenLabsQuotaError extends Error {
+  /** HTTP ステータス (402 = quota 超過 / 429 = rate limit)。文言非依存の判定用。 */
+  public readonly status: number
   /** Retry-After ヘッダ (秒) があれば格納。 */
   public readonly retryAfterSec: number | null
-  constructor(message: string, retryAfterSec: number | null = null) {
+  constructor(message: string, status: number, retryAfterSec: number | null = null) {
     super(message)
     this.name = 'ElevenLabsQuotaError'
+    this.status = status
     this.retryAfterSec = retryAfterSec
   }
 }
@@ -317,6 +320,7 @@ async function callTtsOnce(
         res.status === 402
           ? 'ElevenLabs の利用枠を超えています (HTTP 402)'
           : 'ElevenLabs のレート制限に達しました (HTTP 429)',
+        res.status,
         retryAfter,
       )
     }
@@ -381,8 +385,9 @@ async function callTts(
       // Auth エラーは即座に bail (キーが間違ってる)
       if (e instanceof ElevenLabsAuthError) throw e
 
-      // 402 (Quota Exceeded) はリトライしても無駄
-      if (e instanceof ElevenLabsQuotaError && /HTTP 402/.test(e.message)) throw e
+      // 402 (Quota Exceeded) はリトライしても無駄。
+      // 文言ではなく status で判定（ElevenLabsApiError と同じパターン）。
+      if (e instanceof ElevenLabsQuotaError && e.status === 402) throw e
 
       // これ以上リトライしない
       if (attempt >= MAX_RETRIES) break

@@ -63,6 +63,7 @@ export default function LoginPage() {
               id="login-email"
               type="email"
               autoComplete="email"
+              autoFocus
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
@@ -88,7 +89,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 ring-1 ring-red-200">
+            <p role="alert" aria-live="assertive" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 ring-1 ring-red-200">
               {error}
             </p>
           )}
@@ -102,6 +103,11 @@ export default function LoginPage() {
             ログイン
           </Button>
         </form>
+
+        {/* ログインできない時の出口（パスワード復旧導線） */}
+        <p className="mt-4 text-center text-xs text-gray-400">
+          パスワードをお忘れの場合は管理者にお問い合わせください
+        </p>
       </div>
     </div>
   )

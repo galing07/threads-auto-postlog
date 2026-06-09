@@ -83,7 +83,8 @@ export async function GET(req: NextRequest) {
   }
   if (!isEncryptionAvailable()) {
     console.error('[x/callback] ENCRYPTION_KEY が未設定です')
-    return redirectFailure('server_misconfigured')
+    // 内部設定状態を URL クエリに露出させない汎用コード（詳細はサーバーログのみ）
+    return redirectFailure('internal_error')
   }
 
   // code → access_token / refresh_token 交換（PKCE）
@@ -97,7 +98,7 @@ export async function GET(req: NextRequest) {
 
   // 診断用: X が実際に付与した scope を毎回記録する（scope 自体は機密ではない）。
   // 「アプリ権限が Read のまま」か「権限は付与されたが別要因」かを切り分けるための単一の証拠。
-  console.log('[x/callback] granted scope:', tokens.scope || '(empty / not returned)')
+  console.error('[x/callback] granted scope:', tokens.scope || '(empty / not returned)')
 
   // 書き込みスコープ検証: アプリの App permissions が「Read」のままだと、tweet.write を要求しても
   // 付与スコープから外れ、投稿時に 403「not permitted」になる。連携時点で検知して即案内する。

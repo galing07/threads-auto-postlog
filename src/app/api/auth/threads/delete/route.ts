@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { decryptSecret } from '@/lib/crypto'
 import crypto from 'crypto'
 
 /**
@@ -61,7 +62,8 @@ export async function POST(req: NextRequest) {
 
     for (const acc of accounts ?? []) {
       if (!acc.threads_client_secret) continue
-      const parsed = parseSignedRequest(signedRequest, acc.threads_client_secret)
+      const secret = decryptSecret(acc.threads_client_secret) ?? acc.threads_client_secret
+      const parsed = parseSignedRequest(signedRequest, secret)
       if (parsed?.user_id && acc.threads_user_id === parsed.user_id) {
         matchedAccount = { id: acc.id, user_id: acc.user_id }
         break
@@ -94,5 +96,5 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true, endpoint: 'threads-delete-callback' })
+  return NextResponse.json({ ok: true })
 }

@@ -88,6 +88,8 @@ export default function ThreadsGeneratePage() {
 
   const isDemoMode = !selectedAccount
   const selectedRefName = referenceAccounts.find(r => r.id === selectedRefAccount)?.name
+  // 500字超過の事前検知（CharCounter と同じ code-point 数え）。X の xOver と同パターン。
+  const over = [...generatedText].length > THREADS_LIMIT
 
   async function handleGenerate(overrideTheme?: string) {
     const targetTheme = overrideTheme ?? theme
@@ -218,6 +220,11 @@ export default function ThreadsGeneratePage() {
   }
 
   async function handleSave(publish = false) {
+    // 500字超過のまま投稿しようとした場合は、Threads側で弾かれる前に止める
+    if (publish && over) {
+      toast.error('500文字を超えています。短くすると投稿できます')
+      return
+    }
     setLoading(true)
     try {
       const post = await persistDraft()
@@ -243,6 +250,7 @@ export default function ThreadsGeneratePage() {
   // 予約投稿: 下書きを保存 → /schedule で予約。実際の送信は pg_cron が期限到来時に行う。
   async function handleSchedule(iso: string) {
     if (!selectedAccount) { toast.error('予約にはアカウントの選択が必要です'); return }
+    if (over) { toast.error('500文字を超えています。短くすると投稿できます'); return }
     setLoading(true)
     try {
       const post = await persistDraft()
@@ -428,6 +436,8 @@ export default function ThreadsGeneratePage() {
             onSaveDraft={() => handleSave(false)}
             onPublishNow={() => handleSave(true)}
             onSchedule={handleSchedule}
+            actionDisabled={over}
+            actionDisabledReason="500文字を超えています。短くすると投稿できます"
           />
         </div>
       )}

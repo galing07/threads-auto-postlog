@@ -27,7 +27,7 @@ const PUBLIC_ACCOUNT_COLUMNS = [
   'created_at',
   'updated_at',
   // 機密のため意図的に除外（絶対にこの配列へ足さない）:
-  //   access_token / threads_client_id / threads_client_secret / x_refresh_token(削除済)
+  //   access_token / threads_client_id / threads_client_secret / x_refresh_token は機密のため除外
 ].join(',')
 
 const MAX_NAME = 100

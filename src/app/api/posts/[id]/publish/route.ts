@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { publishPost } from '@/lib/platforms/publishers'
 import { PublishError } from '@/lib/platforms/errors'
+import { sanitizeProviderError } from '@/lib/ai/sanitize-error'
 import type { Account } from '@/types/database'
 
 // Instagram 画像/Reels コンテナが公開可能になるまでのポーリングに余裕を持たせる
@@ -122,19 +123,22 @@ export async function POST(
       platformPostIds: result.platformPostIds,
     })
   } catch (e) {
-    const internalMessage = e instanceof Error ? e.message : 'unknown'
-    console.error('[posts/publish]', id, internalMessage)
+    // AI生成系（generate/text 等）と同じく sanitizeProviderError を通してから
+    // ログ・DB に残す。OAuth トークン断片などが console.error / posts.error_message /
+    // post_logs に混入するのを防ぐ多層防御。
+    const safeMessage = sanitizeProviderError(e)
+    console.error('[posts/publish]', id, safeMessage)
 
     // 失敗時は status を failed に戻して error_message を残す
     await supabase
       .from('posts')
-      .update({ status: 'failed', error_message: internalMessage.slice(0, 500) })
+      .update({ status: 'failed', error_message: safeMessage.slice(0, 500) })
       .eq('id', id)
 
     await supabase.from('post_logs').insert({
       post_id: id,
       action: 'failed',
-      message: internalMessage.slice(0, 500),
+      message: safeMessage.slice(0, 500),
     })
 
     // PublishError（機密を含まない安全な公開エラー）のときだけ、原因が分かる
@@ -144,6 +148,11 @@ export async function POST(
     if (e instanceof PublishError) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: 400 })
     }
-    return NextResponse.json({ error: '投稿に失敗しました' }, { status: 400 })
+    // 予期しない例外は内部エラーとして 500 を返す（PublishError のみ 400）。
+    // 機械可読な code を付与してフロント側のトースト導線で分岐できるようにする。
+    return NextResponse.json(
+      { error: '投稿に失敗しました', code: 'PUBLISH_FAILED' },
+      { status: 500 },
+    )
   }
 }

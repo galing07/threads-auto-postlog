@@ -16,7 +16,11 @@ export async function createServerSupabaseClient() {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             )
-          } catch {}
+          } catch {
+            // Server Component からの呼び出しでは cookies への書き込みができず throw する。
+            // Supabase 公式推奨どおり、ここでは無視してよい（セッションのリフレッシュは
+            // middleware が行うため、Server Component 側の書き込み失敗は問題にならない）。
+          }
         },
       },
     }

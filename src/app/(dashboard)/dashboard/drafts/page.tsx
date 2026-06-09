@@ -288,6 +288,10 @@ function DraftCard({
                   ))}
                 </select>
               )}
+              {/* 投稿先未選択時の無効理由（色だけの非活性は気づかれにくいので明示） */}
+              {(post.status === 'draft' || post.status === 'failed') && !post.account_id && accounts.length > 0 && !effectiveAccountId && (
+                <span className="text-[11px] text-amber-600">投稿先を選ぶと投稿・予約できます</span>
+              )}
 
               {/* 下書き / 失敗: 日時ピッカー + 予約 + 今すぐ投稿（アカウント確定後に有効） */}
               {(post.status === 'draft' || post.status === 'failed') && (post.account_id || accounts.length > 0) && (

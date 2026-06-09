@@ -390,7 +390,13 @@ export async function exchangeInstagramCode(
     throw new InstagramAuthError('Instagram 長期トークンの取得に失敗しました')
   }
   const longData = (await longRes.json()) as { access_token?: string; expires_in?: number }
-  const accessToken = longData.access_token ?? shortData.access_token
+  // 長期トークン交換が HTTP 200 を返しつつ access_token を欠く場合、短期トークンへ
+  // 無言フォールバックすると「60日有効」のつもりで実際は短期（数時間）のトークンを
+  // 保存してしまい、早期失効で投稿が突然失敗する。API 契約違反は fail-loud にする。
+  if (!longData.access_token) {
+    throw new InstagramAuthError('Instagram 長期トークンの取得に失敗しました（access_token が空）')
+  }
+  const accessToken = longData.access_token
   const expiresAt = Date.now() + (longData.expires_in ?? 60 * 24 * 60 * 60) * 1000
 
   // 3. IGユーザーID / username

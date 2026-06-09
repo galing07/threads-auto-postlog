@@ -429,9 +429,17 @@ export async function generateVideoScript(
       }
 
       const json = await res.json() as {
-        choices?: Array<{ message?: { content?: string } }>
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
       }
       rawContent = json.choices?.[0]?.message?.content ?? ''
+      // max_tokens 到達で途中破断した応答は、不正 JSON として無駄に再試行しても
+      // 同じ結果になる。text.ts と同様に finish_reason==='length' を即エラー化する。
+      // （reasoning モデルでは思考トークンも max_tokens を消費する点に注意）
+      if (json.choices?.[0]?.finish_reason === 'length') {
+        throw new ScriptGenerationError(
+          'AI応答が長すぎて途中で切れました。少し時間をおいて再試行してください',
+        )
+      }
       if (!rawContent) {
         throw new ScriptGenerationError('OpenRouter 応答が空です')
       }

@@ -10,6 +10,7 @@ import { PLATFORM_BRAND, InstagramIcon, XBrandIcon, type BrandPlatform } from '@
 import { cx } from '@/lib/utils'
 import { useToast } from '@/components/ui/Toast'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { useModalA11y } from '@/lib/hooks/use-modal-a11y'
 import type { Account, ReferenceAccount } from '@/types/database'
 
 type SupportedPlatform = 'threads' | 'instagram' | 'x'
@@ -572,26 +573,38 @@ function ReferenceAccountsSection() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch('/api/reference-accounts').then(r => r.json()).then((d: ReferenceAccount[]) => {
-      setRefs(Array.isArray(d) ? d : [])
-    })
-  }, [])
+    fetch('/api/reference-accounts')
+      .then(r => r.json())
+      .then((d: ReferenceAccount[]) => {
+        setRefs(Array.isArray(d) ? d : [])
+      })
+      .catch(() => {
+        toast.error('参考アカウントの読み込みに失敗しました')
+      })
+  }, [toast])
 
   async function handleAdd() {
     if (!name.trim()) return
     setSaving(true)
-    const res = await fetch('/api/reference-accounts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), handle: handle.trim() || undefined }),
-    })
-    const data = await res.json() as ReferenceAccount & { error?: string }
-    setSaving(false)
-    if (!data.error) {
+    try {
+      const res = await fetch('/api/reference-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), handle: handle.trim() || undefined }),
+      })
+      const data = await res.json().catch(() => ({})) as ReferenceAccount & { error?: string }
+      if (!res.ok || data.error) {
+        toast.error(data.error ?? '参考アカウントの追加に失敗しました')
+        return
+      }
       setRefs(prev => [data, ...prev])
       setName('')
       setHandle('')
       setShowAdd(false)
+    } catch {
+      toast.error('参考アカウントの追加に失敗しました')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -775,6 +788,11 @@ export default function AccountsPage() {
     resetForm()
   }
 
+  // モーダルのa11y: role/aria は下の JSX 側で付与。Esc・フォーカストラップ・
+  // スクロールロック・フォーカス復元を共通フックで担保する。closeForm は送信中
+  // early-return するため、送信中の Esc では閉じない。
+  const modalRef = useModalA11y<HTMLDivElement>(showForm, closeForm)
+
   async function handleSubmit() {
     setFormError('')
     if (!form.name.trim()) { setFormError('アカウント名を入力してください'); return }
@@ -952,6 +970,10 @@ export default function AccountsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={closeForm} />
           <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-modal-title"
             className="relative w-full max-w-lg rounded-xl bg-white"
             style={{
               border: '1px solid #e5edf5',
@@ -959,7 +981,7 @@ export default function AccountsPage() {
             }}
           >
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <h2 className="text-base font-semibold" style={{ color: '#061b31' }}>
+              <h2 id="account-modal-title" className="text-base font-semibold" style={{ color: '#061b31' }}>
                 新しいアカウントを追加
               </h2>
               <button
@@ -1176,7 +1198,7 @@ export default function AccountsPage() {
                 </div>
 
                 {formError && (
-                  <p className="flex items-start gap-1.5 text-xs text-red-500">
+                  <p role="alert" className="flex items-start gap-1.5 text-xs text-red-500">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
                     <span className="break-words">{formError}</span>
                   </p>

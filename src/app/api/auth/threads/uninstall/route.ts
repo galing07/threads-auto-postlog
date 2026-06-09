@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { decryptSecret } from '@/lib/crypto'
 import crypto from 'crypto'
 
 /**
@@ -65,7 +66,8 @@ export async function POST(req: NextRequest) {
 
     for (const acc of accounts ?? []) {
       if (!acc.threads_client_secret) continue
-      const parsed = parseSignedRequest(signedRequest, acc.threads_client_secret)
+      const secret = decryptSecret(acc.threads_client_secret) ?? acc.threads_client_secret
+      const parsed = parseSignedRequest(signedRequest, secret)
       if (parsed?.user_id) {
         if (acc.threads_user_id === parsed.user_id) {
           matchedAccountId = acc.id
@@ -95,5 +97,5 @@ export async function POST(req: NextRequest) {
 
 // Metaの初期検証で GET を投げてくる場合があるので200で受ける
 export async function GET() {
-  return NextResponse.json({ ok: true, endpoint: 'threads-uninstall-callback' })
+  return NextResponse.json({ ok: true })
 }

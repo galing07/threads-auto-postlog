@@ -210,7 +210,9 @@ const xPublisher: Publisher = {
   },
 }
 
-// NOTE: tiktok / youtube は今後 publisher 実装を追加するため、ここでは未登録。
+// NOTE: tiktok / youtube は動画専用プラットフォームのため、テキスト投稿用の
+// この publishers には登録しない（動画投稿は下部の videoPublishers に実装済み）。
+// tiktok / youtube へのテキスト投稿は非対応。
 // 呼び出し側 (publishPost) が undefined を弾く分岐を持っているので安全。
 export const publishers: Partial<Record<Platform, Publisher>> = {
   threads: threadsPublisher,
@@ -403,6 +405,24 @@ export async function publishPost(ctx: PublishContext): Promise<PublishResult> {
       // 残すためそのまま再送出する。それ以外は汎用の期限切れ案内にフォールバック。
       if (e instanceof PublishError) throw e
       throw new PublishError('TOKEN_EXPIRED', 'アクセストークンの有効期限が切れています。再連携が必要です')
+    }
+    // [Threads] container 作成後に threads_publish が 401 で落ちた場合、エラーに
+    // 載った containerId を使ってコンテナを作り直さず publish のみ再試行する
+    // （孤立コンテナの量産防止）。それ以外は通常どおり publish を丸ごと再実行。
+    if (
+      dctx.account.platform === 'threads' &&
+      e instanceof ThreadsAuthError &&
+      e.containerId
+    ) {
+      const result = await createThreadsPost(
+        { accessToken: dctx.account.access_token!, userId: dctx.account.threads_user_id! },
+        {
+          text: dctx.post.text_content ?? '',
+          imageUrl: dctx.post.image_url ?? undefined,
+        },
+        { containerId: e.containerId },
+      )
+      return { platformPostId: result.id }
     }
     // 更新後の credentials で 1 回だけ再試行
     return publisher.publish(dctx)

@@ -58,8 +58,8 @@ import { assertFetchableVideoUrl } from '@/lib/platforms/publishers'
  *
  * 各 step は idempotent:
  *   - Remotion: 画像/音声は url が空のシーンのみ、レンダーは final_video_url が空のときのみ
- *   - HeyGen  : script / voice_url / heygen_video_id / final_video_url を順に永続化し、
- *               レジューム時はそれぞれが揃っているフェーズから再開する
+ *   - HeyGen  : script / voice_url (storage path) / heygen_video_id / final_video_url を
+ *               順に永続化し、レジューム時はそれぞれが揃っているフェーズから再開する
  */
 
 // gpt-image-2 に統一（src/lib/ai/image.ts と同じモデル）
@@ -132,6 +132,21 @@ async function mapWithConcurrency<TIn, TOut>(
 // パイプラインを Path A(Lambda) と Path B(local) で切り替えるフラグ。
 // 既定は local。AWS をセットアップしたら REMOTION_PROVIDER=lambda にする。
 const REMOTION_PROVIDER = (process.env.REMOTION_PROVIDER ?? 'local').toLowerCase()
+
+// 生成中ステータス（draft/ready/failed 以外）。途中でプロセスが落ちたり DB 書込が
+// 失敗するとここで永久に固まりうる（acquireGenerationLock は draft からのみ、
+// restart は failed からのみだったため復旧不能だった）。
+const STUCK_STATUSES: readonly VideoStatus[] = [
+  'generating_script',
+  'generating_images',
+  'generating_voice',
+  'rendering',
+] as const
+
+// stuck とみなす経過時間（分）。HeyGen のハードタイムアウト 15 分 + Remotion 数分 +
+// 余裕を見て十分に長く取り、正常進行中のジョブを誤って draft に戻さないようにする。
+// 予約投稿 cron の STALE_PUBLISHING_MINUTES (10分) と同じ stale-lock 回収パターン。
+const STUCK_GENERATION_MINUTES = 30
 
 export interface PipelineProgress {
   videoId: string
@@ -842,6 +857,11 @@ export async function runVideoPipeline(
  */
 const HEYGEN_DOWNLOAD_MAX_BYTES = 200 * 1024 * 1024
 
+// HeyGen に渡す voice 音声の signed URL 有効期限 (7 日)。storage.ts の
+// FINAL_VIDEO_EXPIRES_SEC と揃える。voice_url には storage path を永続化し、
+// HeyGen 投入の直前に都度この期限で署名 URL を発行する。
+const HEYGEN_VOICE_SIGNED_URL_EXPIRES_SEC = 60 * 60 * 24 * 7
+
 // ステータスポーリングはサーバー内ループではなく、クライアント駆動の単発チェック
 // (checkAndFinalizeHeyGen) に分離したため、旧ポーリング設定 (interval/timeout) は廃止。
 
@@ -878,8 +898,9 @@ function isSignedUrlExpired(signedUrl: string, skewMs = 60_000): boolean {
  *
  * voice_source ごとの分岐:
  *   - 'elevenlabs':
- *       videos.voice_url が有効な signed URL ならそれを再利用 (status 更新もしない)。
- *       無効 or 未設定なら ElevenLabs で合成 → Storage にアップロード → voice_url を永続化。
+ *       videos.voice_url に **storage path** を永続化し (scenes / final_video_url と統一)、
+ *       HeyGen 投入の直前に都度 signed URL を発行する。既に音声があれば再合成しない。
+ *       未生成のときのみ ElevenLabs で合成 → Storage にアップロードし、
  *       このとき videos.status を 'generating_voice' に遷移させる。
  *   - 'heygen':
  *       HeyGen 内蔵 TTS を使うため ElevenLabs 合成は不要。
@@ -904,12 +925,29 @@ async function ensureHeyGenVoice(
     throw new PipelineError(`未知の voice_source: ${String(video.voice_source)}`)
   }
 
-  // ElevenLabs 経路: voice_url を再利用できるなら再合成しない
-  if (video.voice_url && !isSignedUrlExpired(video.voice_url)) {
-    return { type: 'audio', audioUrl: video.voice_url }
+  // ElevenLabs 経路: 既存の音声があれば再合成しない。
+  // voice_url には storage path を保存する方針だが、過去に signed URL を保存した行も
+  // 後方互換で受け入れる:
+  //   - http(s) URL  : 旧形式。期限内ならそのまま再利用、期限切れなら再合成にフォールバック。
+  //   - それ以外      : storage path とみなし、HeyGen 投入直前に都度 signed URL を発行。
+  if (video.voice_url) {
+    const stored = video.voice_url.trim()
+    if (stored) {
+      const isHttp = stored.startsWith('http://') || stored.startsWith('https://')
+      if (isHttp) {
+        // 旧形式の signed URL。期限内なら再利用。期限切れは下の再合成に落ちる。
+        if (!isSignedUrlExpired(stored)) {
+          return { type: 'audio', audioUrl: stored }
+        }
+      } else {
+        // storage path → その都度新鮮な signed URL を発行して HeyGen に渡す。
+        const freshUrl = await getSignedUrl(stored, HEYGEN_VOICE_SIGNED_URL_EXPIRES_SEC)
+        return { type: 'audio', audioUrl: freshUrl }
+      }
+    }
   }
 
-  // 未生成 or 期限切れ → 合成してアップロード
+  // 未生成 or (旧 signed URL が) 期限切れ → 合成してアップロード
   await updateVideoStatus(video.id, 'generating_voice')
 
   const narrationRes = await generateFullNarration([scriptText], {}, video.user_id)
@@ -920,16 +958,18 @@ async function ensureHeyGenVoice(
     mimeType: narrationRes.mimeType,
   })
 
-  // signedUrl を永続化 (final_video_url と同じ運用)。次回レジューム時に再利用する。
+  // storage path を永続化 (scenes / final_video_url と同じ運用)。
+  // 次回レジューム時はこのパスから都度 signed URL を発行して再利用する。
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('videos')
-    .update({ voice_url: uploaded.signedUrl })
+    .update({ voice_url: uploaded.storagePath })
     .eq('id', video.id)
   if (error) {
     throw new PipelineError(`videos.voice_url の保存に失敗: ${error.message}`, error)
   }
 
+  // 今回の合成ぶんは upload が返した signed URL をそのまま HeyGen に渡せる (発行直後で新鮮)。
   return { type: 'audio', audioUrl: uploaded.signedUrl }
 }
 
@@ -1050,13 +1090,14 @@ export async function checkAndFinalizeHeyGen(
  *   generating_script → (generating_voice : voice_source='elevenlabs' のときのみ) → rendering → ready
  *
  * voice_source:
- *   - 'elevenlabs' : ElevenLabs で MP3 を生成し、署名付き URL を HeyGen に渡す
- *                    (videos.voice_url に永続化して再開時に再利用する)
+ *   - 'elevenlabs' : ElevenLabs で MP3 を生成して Storage に保存し、HeyGen 投入の
+ *                    直前に署名付き URL を都度発行して渡す
+ *                    (videos.voice_url には storage path を永続化して再開時に再利用する)
  *   - 'heygen'     : HeyGen 内蔵 TTS を使う (heygen_voice_id 必須)
  *
  * 各ステップは idempotent:
  *   - script は videos.script があれば再生成しない
- *   - voice は videos.voice_url が有効ならそのまま使う
+ *   - voice は videos.voice_url (storage path) があれば再合成せず署名 URL を再発行する
  *   - HeyGen ジョブは videos.heygen_video_id があれば再投入せず再ポーリングする
  *   - 最終 MP4 は videos.final_video_url があればスキップして ready 化のみ行う
  */
@@ -1335,11 +1376,15 @@ export async function regenerateAllSceneAudio(videoId: string, expectedUserId?: 
     if (clearErr) {
       throw new PipelineError(`scenes.audio_url のクリアに失敗: ${clearErr.message}`, clearErr)
     }
-    // 古い動画 MP4 もクリア
+    // 古い動画 MP4 もクリア。
+    // ここが失敗すると古い MP4 が残り、再レンダー導線も塞がれて古い音声のまま
+    // 公開されうるため、兄弟（regenerateSceneImage / updateSceneTexts）同様に
+    // .throwOnError() で失敗を検知し、catch 経由で failed に落とす。
     await supabase
       .from('videos')
       .update({ final_video_url: null })
       .eq('id', videoId)
+      .throwOnError()
 
     await generateSceneAudio(videoId)
 
@@ -1387,14 +1432,59 @@ export async function regenerateSceneTracked(
 }
 
 /**
+ * generating_* / rendering で「stuck」した動画を draft に戻す（復旧用ヘルパー）。
+ *
+ * 途中でプロセスが落ちる / DB 書込が失敗する等で生成中ステータスのまま固まると、
+ * acquireGenerationLock（draft 起点）も restartFailedVideo（failed 起点）も
+ * 反応せず永久に詰む。予約投稿 cron の stale-lock 回収と同じく、
+ * 「生成中ステータス かつ generation_started_at が閾値より古い」行のみを
+ * compare-and-set で draft に戻す。
+ *
+ * 安全性:
+ *   - generation_started_at が新しい（=正常進行中の可能性がある）ジョブには触れない。
+ *   - generation_started_at が null の行も「経過時間を判定できない」ため触れない
+ *     （正常な新規ジョブを誤って巻き戻さないフェイルセーフ）。
+ *   - 単一 UPDATE の CAS なので、並走しても draft に戻せるのは 1 リクエストだけ。
+ *
+ * @returns true なら stuck を draft に戻して acquire できた（= enqueue してよい）
+ *          false なら stuck ではなかった / 既に他リクエストが回収した / 閾値未経過
+ */
+export async function recoverStuckVideo(
+  videoId: string,
+  stuckMinutes: number = STUCK_GENERATION_MINUTES,
+): Promise<boolean> {
+  const supabase = createAdminClient()
+  const cutoffIso = new Date(Date.now() - stuckMinutes * 60_000).toISOString()
+  const { data: recovered, error } = await supabase
+    .from('videos')
+    .update({
+      status: 'draft',
+      error_message: null,
+      generation_started_at: new Date().toISOString(),
+    })
+    .eq('id', videoId)
+    .in('status', STUCK_STATUSES as VideoStatus[])
+    .not('generation_started_at', 'is', null)
+    .lt('generation_started_at', cutoffIso)
+    .select('id')
+    .maybeSingle()
+  if (error) {
+    throw new PipelineError(`stuck 動画の回収に失敗しました: ${error.message}`, error)
+  }
+  return Boolean(recovered)
+}
+
+/**
  * failed 状態の動画を draft に戻して再投入する（idempotent な step が再走する）。
  *
- * compare-and-set で「failed → draft」のみ acquire 可能。
+ * compare-and-set で「failed → draft」を acquire する。failed でなくても、
+ * generating_* / rendering で stuck（generation_started_at が閾値より古い）した
+ * 動画は recoverStuckVideo で draft に戻して同様に再開できる（M-3 復旧経路）。
  * 連打や並行リクエストでも 1 つのジョブだけが「再開した動画」を取得し、
  * 残りは false を返す → 呼び出し側 (route) で enqueue をスキップする。
  *
  * @returns true なら state を acquire できた (= ジョブを enqueue してよい)
- *          false なら既に他のリクエストが acquire 済み or もう failed ではない
+ *          false なら既に他のリクエストが acquire 済み、または failed でも stuck でもない
  */
 export async function restartFailedVideo(videoId: string): Promise<boolean> {
   const supabase = createAdminClient()
@@ -1413,8 +1503,11 @@ export async function restartFailedVideo(videoId: string): Promise<boolean> {
   if (error) {
     throw new PipelineError(`restart の状態遷移に失敗しました: ${error.message}`, error)
   }
-  // locked が null → 既に他のリクエストが draft に進めた、または failed じゃなくなった
-  return Boolean(locked)
+  // failed から acquire 成功
+  if (locked) return true
+  // failed ではなかった → stuck（生成中のまま固まった）なら回収を試みる。
+  // 正常進行中（generation_started_at が新しい）のジョブには触れないので安全。
+  return recoverStuckVideo(videoId)
 }
 
 /**

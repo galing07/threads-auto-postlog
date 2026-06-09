@@ -35,6 +35,27 @@ export class XAuthError extends PublishError {
   }
 }
 
+/**
+ * スレッド投稿が途中で失敗したことを示すエラー。
+ * 既に投稿済みのツイート（先頭から postedIds 件）が X 上に残っているため、
+ * 呼び出し側は「先頭から全再実行」してはいけない（重複スレッドになる）。
+ * reactive retry は本エラーを「部分成功・再試行不可」として扱う。
+ */
+export class XThreadPartialError extends PublishError {
+  /** 失敗時点までに投稿に成功したツイート ID（投稿順） */
+  postedIds: string[]
+
+  constructor(postedIds: string[], cause: unknown) {
+    const causeMsg = cause instanceof Error ? cause.message : 'unknown'
+    super(
+      'X_THREAD_PARTIAL',
+      `Xスレッドの途中（${postedIds.length}件目まで投稿済み）で失敗しました。重複を避けるため自動再試行は行いません。X上の投稿状況を確認してください。 / 原因: ${causeMsg}`,
+    )
+    this.name = 'XThreadPartialError'
+    this.postedIds = postedIds
+  }
+}
+
 // X API v2 のエラーボディから、機密を含まない説明文だけを取り出す。
 // 形式例: { title, detail, reason, errors:[{message}] }
 function parseXErrorDetail(raw: string): string {
@@ -253,8 +274,17 @@ export async function createXThread(
   const results: XTweetResult[] = []
   for (let i = 0; i < parts.length; i++) {
     const replyToId = results.at(-1)?.id
-    // 画像はスレッド先頭ツイートにのみ添付
-    results.push(await createXTweet(auth, parts[i], replyToId, i === 0 ? mediaIds : undefined))
+    try {
+      // 画像はスレッド先頭ツイートにのみ添付
+      results.push(await createXTweet(auth, parts[i], replyToId, i === 0 ? mediaIds : undefined))
+    } catch (e) {
+      // 先頭ツイートで失敗 = まだ何も投稿していない → そのまま throw し、
+      // 上位の auth retry が先頭から安全に再実行できる（重複しない）。
+      if (results.length === 0) throw e
+      // 2件目以降で失敗 = 部分スレッドが X 上に残っている。先頭から再実行すると
+      // 重複するため、投稿済み ID を載せた専用エラーで「再試行不可」を明示する。
+      throw new XThreadPartialError(results.map(r => r.id), e)
+    }
   }
   return results
 }

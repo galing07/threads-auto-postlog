@@ -50,10 +50,12 @@ export async function GET() {
   const state = crypto.randomBytes(24).toString('hex')
 
   const cookieStore = await cookies()
+  // OAuth の戻り（tiktok.com → 当サイトへの cross-site トップレベル遷移）でも確実に Cookie が
+  // 送られるよう SameSite=None(secure必須) を使う（Instagram/X と統一。Lax の取りこぼし対策）。
   cookieStore.set(TIKTOK_OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: true,
+    sameSite: 'none',
     path: '/',
     maxAge: TIKTOK_OAUTH_STATE_MAX_AGE_SEC,
   })

@@ -1,5 +1,6 @@
 // Tremor Input [v2.0.0]
 import React from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { cx, focusInput, hasErrorInput } from '@/lib/utils'
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -32,12 +33,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         {isPassword && (
           <button
             type="button"
-            aria-label="Toggle password visibility"
+            aria-label={typeState === 'password' ? 'パスワードを表示' : 'パスワードを隠す'}
             className="absolute bottom-0 right-0 flex h-full items-center px-3 text-gray-400 hover:text-gray-600"
             onClick={() => setTypeState(s => s === 'password' ? 'text' : 'password')}
           >
-            <span className="sr-only">{typeState === 'password' ? 'Show' : 'Hide'}</span>
-            {typeState === 'password' ? '👁' : '🙈'}
+            {typeState === 'password' ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
           </button>
         )}
       </div>
