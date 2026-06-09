@@ -48,11 +48,23 @@ export interface Publisher {
 }
 
 // ---------- Threads ----------
+// Threads 本文のハード上限。これを超えると Threads API は HTTP 500
+// （THApiException code 100: "Param text must be at most 500 characters long."）を返すため、
+// 分かりにくい 500 になる前にここで弾いて明確なエラーにする。
+const THREADS_TEXT_MAX = 500
+
 const threadsPublisher: Publisher = {
   platform: 'threads',
-  validate({ account }) {
+  validate({ post, account }) {
     if (!account.access_token || !account.threads_user_id) {
       throw new PublishError('THREADS_NOT_CONFIGURED', 'Threads APIトークンが設定されていません')
+    }
+    const len = [...(post.text_content ?? '')].length
+    if (len > THREADS_TEXT_MAX) {
+      throw new PublishError(
+        'THREADS_TEXT_TOO_LONG',
+        `本文が${THREADS_TEXT_MAX}文字を超えています（現在${len}文字）。${THREADS_TEXT_MAX}文字以内に編集してください。`,
+      )
     }
   },
   async publish({ post, account }) {
