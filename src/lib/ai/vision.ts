@@ -6,7 +6,9 @@
 
 import { sanitizeProviderHttpError } from './sanitize-error'
 
-const VISION_MODEL = 'google/gemini-3.5-flash'
+// gemini-3.5-flash は応答が不安定（空/不整合）なため、安定する 2.5-flash に統一。
+// 2.5-flash はマルチモーダル対応で画像入力も扱える。
+const VISION_MODEL = 'google/gemini-2.5-flash'
 const REQUEST_TIMEOUT_MS = 30_000
 
 const SYSTEM_PROMPT = `You analyze an image's *visual design structure* to be used as a reference template for generating a NEW image with different content.

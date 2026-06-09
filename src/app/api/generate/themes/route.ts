@@ -103,10 +103,12 @@ export async function POST(req: NextRequest) {
         'X-Title': 'SNS Auto Post',
       },
       body: JSON.stringify({
-        model: 'google/gemini-3.5-flash',
-        // gemini-3.5 系は reasoning トークンを消費する。テーマ列挙は単純タスクなので
-        // 思考量を最小化(effort:low)して応答を速くしつつ、出力からは除外する。
+        // gemini-3.5-flash は reasoning モデル特性で空/不整合な応答を断続的に返し
+        // (502 empty result / 500 choices欠落) が多発したため、JSON 出力が安定する
+        // 2.5-flash に変更（text.ts と同じ安定モデルに統一）。
+        model: 'google/gemini-2.5-flash',
         // max_tokens は 15テーマ JSON が切れない十分な枠。
+        // reasoning は非 reasoning モデルでは無害（text.ts と同様に保持）。
         max_tokens: 2048,
         reasoning: { effort: 'low', exclude: true },
         messages: [{ role: 'user', content: prompt }],

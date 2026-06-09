@@ -10,8 +10,9 @@ import { sanitizeProviderHttpError } from '@/lib/ai/sanitize-error'
  * 入力テーマ → 構造化されたシーン配列を生成する。
  * 下流の画像生成（gpt-image-2）と ElevenLabs（音声）に橋渡しする中間表現。
  *
- * モデル: google/gemini-3.5-flash (OpenRouter経由・高速・低コスト)
- *   - text.ts と同じ経路で統一
+ * モデル: google/gemini-2.5-flash (OpenRouter経由・高速・低コスト・JSON出力が安定)
+ *   - text.ts と同じ経路・同じ安定モデルで統一
+ *   - 旧 gemini-3.5-flash は reasoning モデル特性で空/不整合な応答が多発したため変更
  *   - strict json_schema は gemini 側で未サポートのため json_object モードを使い、
  *     応答は既存の手動バリデータ (validateScriptResponse) で正規化する
  *
@@ -22,7 +23,7 @@ import { sanitizeProviderHttpError } from '@/lib/ai/sanitize-error'
  *   - image_prompt   = 画像生成に渡すイラスト指示（英語推奨、no-text 指示込み）
  */
 
-const OPENROUTER_MODEL = 'google/gemini-3.5-flash'
+const OPENROUTER_MODEL = 'google/gemini-2.5-flash'
 const REQUEST_TIMEOUT_MS = 60_000
 const MIN_SCENES = 3
 const DEFAULT_SCENE_COUNT_MIN = 5
