@@ -52,12 +52,27 @@ async function threadsRequest<T>(
 
   const res = await fetch(`${THREADS_API_BASE}${path}`, init)
   if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    console.error('[Threads API]', method, path, res.status, errText)
-    if (res.status === 401 || res.status === 403) {
-      throw new ThreadsAuthError()
+    // Graph API のエラー本文から、機密を含まない説明文だけを抽出してログ＋例外に載せる。
+    // 形式: { error: { message, type, code, error_subcode, error_user_title, error_user_msg } }
+    // トークン等の機密は元々ボディに含まれない（error.message / error_user_msg のみ扱う）。
+    const raw = await res.text().catch(() => '')
+    let detail = ''
+    try {
+      const j = JSON.parse(raw) as {
+        error?: { message?: string; error_user_title?: string; error_user_msg?: string }
+      }
+      detail = (j.error?.error_user_msg || j.error?.message || j.error?.error_user_title || '')
+        .toString()
+        .slice(0, 200)
+    } catch {
+      // JSON でない場合は先頭のみ
+      detail = raw.replace(/\s+/g, ' ').slice(0, 200)
     }
-    throw new Error(`Threads API error (HTTP ${res.status})`)
+    console.error('[Threads API]', method, path, res.status, detail)
+    if (res.status === 401 || res.status === 403) {
+      throw new ThreadsAuthError(detail ? `Threads 認証/権限エラー: ${detail}` : undefined)
+    }
+    throw new Error(`Threads API error (HTTP ${res.status})${detail ? `: ${detail}` : ''}`)
   }
   return res.json() as Promise<T>
 }

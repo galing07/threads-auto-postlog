@@ -438,6 +438,7 @@ export default function InstagramGeneratePage() {
             imagePrompt={imagePrompt}
             onUploaded={(url) => { setImageUrl(url); setImagePrompt('') }}
             onUploadError={(m) => toast.error(m)}
+            aspectRange={{ min: 0.8, max: 1.91 }}
             badge={referenceImage && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">参考画像でテイスト適用</span>
             )}

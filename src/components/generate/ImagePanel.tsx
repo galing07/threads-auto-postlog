@@ -21,6 +21,18 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
+/** 画像の実寸を取得（取得不可なら null。その場合は縦横比チェックをスキップ）。 */
+async function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
+  try {
+    const bitmap = await createImageBitmap(file)
+    const size = { width: bitmap.width, height: bitmap.height }
+    bitmap.close?.()
+    return size
+  } catch {
+    return null
+  }
+}
+
 interface ImagePanelProps {
   /** カード見出し（例: 図解画像 / 投稿画像（必須）） */
   label: string
@@ -38,6 +50,12 @@ interface ImagePanelProps {
   onUploaded?: (url: string) => void
   /** アップロード失敗時のエラーメッセージ通知 */
   onUploadError?: (msg: string) => void
+  /**
+   * 投稿先SNSが許容する画像の縦横比(幅/高さ)レンジ。指定すると範囲外の画像を
+   * アップロード前に弾く（Threads/Instagram は範囲外だとAPIが400を返すため事前防止）。
+   * X など制限が緩いページでは未指定でよい。
+   */
+  aspectRange?: { min: number; max: number }
   /** 見出し横の補助バッジ（例: 参考画像でテイスト適用） */
   badge?: React.ReactNode
   /** 画像下の注記（例: スレッドの場合は1件目に添付されます） */
@@ -55,7 +73,7 @@ export function ImagePanel({
   imageUrl, imageLoading,
   imageEditPrompt, setImageEditPrompt, imageEditing,
   onGenerate, onEdit, imagePrompt,
-  onUploaded, onUploadError,
+  onUploaded, onUploadError, aspectRange,
   badge, footnote, emptyText, emptyTall = false, imageAlt = '生成された画像',
 }: ImagePanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -67,6 +85,21 @@ export function ImagePanel({
     if (file.size > MAX_UPLOAD_BYTES) {
       onUploadError?.('画像が大きすぎます（5MB以下にしてください）')
       return
+    }
+    // 縦横比チェック（範囲外は Threads/Instagram が 400 を返すので事前に弾く）
+    if (aspectRange) {
+      const size = await readImageSize(file)
+      if (size && size.height > 0) {
+        const ratio = size.width / size.height
+        if (ratio < aspectRange.min || ratio > aspectRange.max) {
+          onUploadError?.(
+            'この画像は縦横比が対応範囲外のため投稿できません。'
+            + '正方形(1:1)・横長(最大1.91:1)・縦長(最大4:5程度)にトリミングしてからお試しください。'
+            + `（スマホのスクショなど縦長すぎる画像は不可）`,
+          )
+          return
+        }
+      }
     }
     setUploading(true)
     try {
