@@ -436,10 +436,12 @@ export default function InstagramGeneratePage() {
             onGenerate={handleGenerateImage}
             onEdit={handleEditImage}
             imagePrompt={imagePrompt}
+            onUploaded={(url) => { setImageUrl(url); setImagePrompt('') }}
+            onUploadError={(m) => toast.error(m)}
             badge={referenceImage && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">参考画像でテイスト適用</span>
             )}
-            emptyText="「画像を生成」ボタンで作成（必須）"
+            emptyText="画像をAIで生成、または自分の画像をアップロード（必須）"
             emptyTall
             imageAlt="生成された画像"
           />

@@ -606,11 +606,13 @@ export default function XGeneratePage() {
             onGenerate={handleGenerateImage}
             onEdit={handleEditImage}
             imagePrompt={imagePrompt}
+            onUploaded={(url) => { setImageUrl(url); setImagePrompt('') }}
+            onUploadError={(m) => toast.error(m)}
             badge={referenceImage && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">参考画像でテイスト適用</span>
             )}
             footnote="スレッドの場合は1件目のツイートに添付されます"
-            emptyText="「図解を生成」ボタンで追加（任意）"
+            emptyText="図解をAIで生成、または自分の画像をアップロード（任意）"
             imageAlt="生成された図解"
           />
 

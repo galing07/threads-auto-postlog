@@ -57,6 +57,35 @@ export async function uploadGeneratedImage(
   return publicUrl
 }
 
+/**
+ * ユーザーがアップロードした画像を post-images バケットへ保存し公開URLを返す。
+ * 投稿時は X / Meta がサーバー側でこのURLを fetch するため、公開 https URL が必要。
+ * contentType / ext は呼び出し側でマジックバイト検証済みの値を渡すこと。
+ */
+export async function uploadUserImage(
+  buffer: Buffer,
+  ext: string,
+  contentType: string,
+  userId: string,
+): Promise<string> {
+  const supabase = createAdminClient()
+  const safeUser = userId.replace(/[^a-zA-Z0-9-]/g, '') || 'unknown'
+  const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'png'
+  const fileName = `uploads/${safeUser}/${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`
+
+  const { error } = await supabase.storage
+    .from('post-images')
+    .upload(fileName, buffer, { contentType, upsert: false })
+
+  if (error) throw new Error(`Storage upload failed: ${error.message}`)
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('post-images')
+    .getPublicUrl(fileName)
+
+  return publicUrl
+}
+
 export async function generateDiagramImage({
   prompt,
   style = 'diagram',
