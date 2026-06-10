@@ -87,6 +87,33 @@ function assertSafeImageUrl(imageUrl: string) {
   }
 }
 
+/**
+ * 画像コンテナの処理完了を待つ。
+ * Threads は image_url を「非同期で」取得・処理するため、コンテナ作成直後に
+ * threads_publish を呼ぶと "The media ... cannot be found" (HTTP 400) になる。
+ * status=FINISHED になるまでポーリングしてから publish する（Instagram と同様）。
+ * Threads media container status: EXPIRED | ERROR | FINISHED | IN_PROGRESS | PUBLISHED
+ */
+async function waitForContainerReady(containerId: string, accessToken: string): Promise<void> {
+  const MAX_ATTEMPTS = 12
+  const INTERVAL_MS = 2000
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const data = await threadsRequest<{ status?: string; error_message?: string }>(
+      `/${encodeURIComponent(containerId)}?fields=status,error_message`,
+      accessToken,
+    )
+    const status = data.status
+    if (status === 'FINISHED' || status === 'PUBLISHED') return
+    if (status === 'ERROR' || status === 'EXPIRED') {
+      throw new Error(
+        `Threads の画像処理に失敗しました (status=${status}${data.error_message ? `: ${data.error_message}` : ''})`,
+      )
+    }
+    await new Promise((r) => setTimeout(r, INTERVAL_MS))
+  }
+  throw new Error('Threads の画像処理が時間内に完了しませんでした。少し時間をおいて再試行してください。')
+}
+
 interface CreatePostExtras {
   /**
    * 既存のコンテナ ID。指定された場合はコンテナ作成をスキップし、threads_publish
@@ -129,6 +156,12 @@ export async function createThreadsPost(
     // 公開前に containerId を呼び出し元へ伝える。publish が auth エラーで落ちても
     // 呼び出し元はこの ID で threads_publish のみ再試行できる。
     onContainerCreated?.(containerId)
+  }
+
+  // 画像つきは Meta が image_url を非同期取得するため、処理完了を待ってから publish する。
+  // （即時 publish は "The media ... cannot be found" 400 になる。テキストのみは即時可）
+  if (imageUrl) {
+    await waitForContainerReady(containerId, accessToken)
   }
 
   try {
