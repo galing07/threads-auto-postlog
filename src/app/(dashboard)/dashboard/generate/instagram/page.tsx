@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import {
   GenerateLayout, GenerateHeader, DoneScreen, DemoModeNotice,
   ThemeField, PostTypeGrid, ThemePreviewRow, GenerateButton, GenerateActions,
-  ManualComposeEntry, ManualModeBadge,
+  ModeToggle, ManualStartButton, ManualModeBadge,
   SectionLabel, CharCounter, SELECT_CLASS, type PostTypeOption,
 } from '@/components/generate/GenerateParts'
 import { ReferencePanel, type ReferenceImage } from '@/components/generate/ReferencePanel'
@@ -344,6 +344,9 @@ export default function InstagramGeneratePage() {
       {/* Step 1: 入力 */}
       {step === 'input' && (
         <div className="space-y-5">
+          {/* 作成方法の選択（AI生成 / 自分で書く） */}
+          <ModeToggle mode={manualMode ? 'manual' : 'ai'} onChange={m => setManualMode(m === 'manual')} />
+
           <Card className="space-y-4">
             {/* アカウント選択 */}
             <div>
@@ -371,37 +374,43 @@ export default function InstagramGeneratePage() {
               )}
             </div>
 
-            {/* テーマ入力 */}
-            <ThemeField
-              theme={theme}
-              setTheme={setTheme}
-              onGenerate={() => handleGenerate()}
-              suggestThemes={suggestThemes}
-              suggestLoading={suggestLoading}
-              suggestions={themeSuggestions}
-              onPickSuggestion={t => { setTheme(t); setThemeSuggestions([]) }}
-              placeholder="例：高卒でも転職できる3つの理由"
-            />
+            {/* テーマ入力（AI生成モードのみ） */}
+            {!manualMode && (
+              <ThemeField
+                theme={theme}
+                setTheme={setTheme}
+                onGenerate={() => handleGenerate()}
+                suggestThemes={suggestThemes}
+                suggestLoading={suggestLoading}
+                suggestions={themeSuggestions}
+                onPickSuggestion={t => { setTheme(t); setThemeSuggestions([]) }}
+                placeholder="例：高卒でも転職できる3つの理由"
+              />
+            )}
           </Card>
 
-          <PostTypeGrid options={POST_TYPES} value={postType} onChange={v => setPostType(v as PostType | '')} />
+          {manualMode ? (
+            <ManualStartButton onClick={startManual} />
+          ) : (
+            <>
+              <PostTypeGrid options={POST_TYPES} value={postType} onChange={v => setPostType(v as PostType | '')} />
 
-          <ReferencePanel
-            open={showReference}
-            onToggle={() => setShowReference(v => !v)}
-            referenceAccounts={referenceAccounts}
-            selectedRefAccount={selectedRefAccount}
-            setSelectedRefAccount={setSelectedRefAccount}
-            referencePost={referencePost}
-            setReferencePost={setReferencePost}
-            referenceImage={referenceImage}
-            setReferenceImage={setReferenceImage}
-            onUploadImage={handleReferenceImageUpload}
-          />
+              <ReferencePanel
+                open={showReference}
+                onToggle={() => setShowReference(v => !v)}
+                referenceAccounts={referenceAccounts}
+                selectedRefAccount={selectedRefAccount}
+                setSelectedRefAccount={setSelectedRefAccount}
+                referencePost={referencePost}
+                setReferencePost={setReferencePost}
+                referenceImage={referenceImage}
+                setReferenceImage={setReferenceImage}
+                onUploadImage={handleReferenceImageUpload}
+              />
 
-          <GenerateButton onGenerate={() => handleGenerate()} disabled={!theme.trim()} loading={loading} />
-
-          <ManualComposeEntry onClick={startManual} />
+              <GenerateButton onGenerate={() => handleGenerate()} disabled={!theme.trim()} loading={loading} />
+            </>
+          )}
         </div>
       )}
 

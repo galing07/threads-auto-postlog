@@ -437,25 +437,59 @@ export function GenerateButton({
   )
 }
 
-// ── 「自分で書く」入口（AI生成をスキップして空のプレビューへ・全SNS共通） ──
-// クライアントが自分で用意した文章を貼り付けて投稿できるようにするための導線。
-export function ManualComposeEntry({ onClick }: { onClick: () => void }) {
+// ── 作成方法トグル（AI生成 / 自分で書く・全SNS共通） ──
+// 入力ステップ最上部に置き、テーマ入力やAI生成を経由するか、用意した文章を貼り付けるかを選ぶ。
+export type ComposeMode = 'ai' | 'manual'
+
+export function ModeToggle({ mode, onChange }: { mode: ComposeMode; onChange: (m: ComposeMode) => void }) {
+  const options = [
+    { key: 'ai' as const, label: 'AIで生成', desc: 'テーマからAIが作成', Icon: Sparkles },
+    { key: 'manual' as const, label: '自分で書く', desc: '用意した文章を貼り付け', Icon: PenLine },
+  ]
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-[#e5edf5]" />
-        <span className="text-xs text-gray-400">または</span>
-        <div className="h-px flex-1 bg-[#e5edf5]" />
-      </div>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#e5edf5] bg-white py-2.5 text-sm font-medium text-gray-700 transition hover:border-[#00A3BF] hover:text-[#006F83]"
-      >
+    <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="作成方法">
+      {options.map(({ key, label, desc, Icon }) => {
+        const active = mode === key
+        return (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(key)}
+            className={cx(
+              'flex items-center gap-2.5 rounded-xl border px-3 py-3 text-left transition',
+              active ? 'border-[#00A3BF] bg-[#E9F7F9]' : 'border-[#e5edf5] bg-white hover:border-[#c8d8e8]',
+            )}
+          >
+            <span className={cx(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+              active ? 'bg-[#00A3BF] text-white' : 'bg-gray-100 text-gray-400',
+            )}>
+              <Icon className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className={cx('block text-sm font-semibold', active ? 'text-[#006F83]' : 'text-gray-700')}>{label}</span>
+              <span className="block text-[11px] text-gray-400">{desc}</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── 「自分で書く」モードの開始ボタン（入力ステップ末尾・全SNS共通） ──
+export function ManualStartButton({ onClick }: { onClick: () => void }) {
+  return (
+    <div>
+      <Button onClick={onClick} className="w-full gap-2 py-2.5">
         <PenLine className="h-4 w-4" />
-        自分で書いて投稿（テキストを貼り付け）
-      </button>
-      <p className="text-center text-xs text-gray-400">AIを使わず、用意した文章をそのまま投稿・予約できます</p>
+        自分で書く（次へ）
+      </Button>
+      <p className="mt-1.5 text-center text-xs text-gray-400">
+        次の画面で文章を貼り付け・入力して、投稿・予約できます
+      </p>
     </div>
   )
 }
