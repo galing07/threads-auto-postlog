@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { HandoffPanel } from '@/components/settings/HandoffPanel'
 
 interface KeysState {
   openrouter_masked: string | null
@@ -334,6 +335,8 @@ export default function SettingsPage() {
               </span>
             )}
           </div>
+
+          <HandoffPanel />
         </>
       )}
     </div>
